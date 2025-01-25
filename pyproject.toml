@@ -1,0 +1,48 @@
+[project]
+name = "npc-iot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mqttproto",
+]
+
+[tool.uv.sources]
+mqttproto = { git = "https://github.com/naglyadservice/mqttproto" }
+
+
+[tool.ruff]
+line-length = 99
+target-version = "py312"
+
+
+[tool.ruff.lint]
+select = [
+    "C",
+    "DTZ",
+    "E",
+    "F",
+    "I",
+    "ICN",
+    "N",
+    "PLC",
+    "PLE",
+    "Q",
+    "S",
+    "T",
+    "W",
+    "YTT",
+    "RET",
+    "SIM",
+    "ASYNC",
+]
+exclude = [
+    ".git",
+    ".venv",
+    ".idea",
+    ".tests",
+    ".cache",
+    "build",
+    "dist",
+]

@@ -84,15 +84,6 @@ The communication between the server and the NPC controllers is structured using
   "humidity": [{"id": 0, "value": 73.2}]
 }
 ```
-
-## Installation
-
-You can install the package via pip:
-
-```bash
-pip install npc-iot
-```
-
 ## Usage
 
 ```python

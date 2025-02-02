@@ -18,11 +18,25 @@ class MqttprotoConnector(BaseConnector):
         self._subscription_maximum_qos = subscription_maximum_qos
         self._exit_stack = None
 
+    async def _run_client(self, start_event: asyncio.Event, stop_event: asyncio.Event) -> None:
+        async with self._mqtt_client:
+            start_event.set()
+            await stop_event.wait()
+
     async def __aenter__(self) -> None:
         # if context manager is not used in _mqtt_client, then use it
         if not hasattr(self._mqtt_client, "_exit_stack"):
             async with AsyncExitStack() as exit_stack:
-                await exit_stack.enter_async_context(self._mqtt_client)
+                start_event = asyncio.Event()
+                stop_event = asyncio.Event()
+
+                task = asyncio.create_task(self._run_client(start_event, stop_event))
+
+                exit_stack.push_async_callback(asyncio.gather, task)
+                exit_stack.callback(stop_event.set)
+
+                await start_event.wait()
+
                 self._exit_stack = exit_stack.pop_all()
 
     async def __aexit__(self, exc_type, exc_value, traceback) -> None:

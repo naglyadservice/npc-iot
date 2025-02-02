@@ -47,17 +47,15 @@ class MqttprotoConnector(BaseConnector):
             topic,
             maximum_qos=QoS(self._subscription_maximum_qos),
         ) as subscription:
-            async for message in subscription:
-                asyncio.create_task(callback(topic=message.topic, payload=message.payload))
+            with suppress(asyncio.CancelledError):
+                async for message in subscription:
+                    asyncio.create_task(callback(topic=message.topic, payload=message.payload))
 
     @asynccontextmanager
     async def subscribe(self, topic: str, callback: CallbackType) -> AsyncIterator[None]:
         task = asyncio.create_task(self._subscribe(topic, callback))
-
         try:
             yield
-
         finally:
             task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+            await task

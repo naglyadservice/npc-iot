@@ -53,7 +53,7 @@ class MessageHandler:
     @asynccontextmanager
     async def handle_messages(self, connector: BaseConnector) -> AsyncIterator[None]:
         async with connector.subscribe(topic=self.topic, callback=self._handle_message):
-            yield None
+            yield
 
 
 class Dispatcher:

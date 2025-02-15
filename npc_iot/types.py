@@ -46,6 +46,10 @@ class BaseResponse(TypedDict):
     code: NotRequired[int]
 
 
+class AckResponse(BaseResponse):
+    pass
+
+
 class GetStateResponse(BaseResponse):
     relay: list[PinStateInfo]
     output: list[PinStateInfo]

@@ -18,7 +18,14 @@ from .connectors.base import BaseConnector
 from .connectors.mqttproto_connector import MqttprotoConnector
 from .dispatcher import Dispatcher
 from .exception import DeviceResponceError
-from .types import BaseResponse, GetStatePayload, GetStateResponse, RebootPayload, SetStatePayload
+from .types import (
+    AckResponse,
+    BaseResponse,
+    GetStatePayload,
+    GetStateResponse,
+    RebootPayload,
+    SetStatePayload,
+)
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +71,7 @@ class NpcClient:
         username: str | None = None,
         password: str | None = None,
         clean_start: bool | None = None,
+        topic_prefix: str = "v2/",
         payload_encoder: Callable[[Any], str | bytes] = json.dumps,
         payload_decoder: Callable[[str | bytes], Any] = json.loads,
         request_id_generator: RequestIdGenerator = _defult_request_id_generator,
@@ -102,6 +110,7 @@ class NpcClient:
             )
 
         self._connector = connector
+        self._topic_prefix = topic_prefix
         self._request_id_generator = request_id_generator
         self._response_waiters: dict[int, ResponseWaiter] = {}
         self._payload_encoder = payload_encoder
@@ -147,7 +156,7 @@ class NpcClient:
             new_payload.update(payload)
 
         await self._connector.send_message(
-            topic=f"v2/{device_id}/{topic}",
+            topic=f"{self._topic_prefix}/{device_id}/{topic}",
             qos=qos,
             payload=self._payload_encoder(new_payload),
             ttl=ttl,
@@ -171,7 +180,7 @@ class NpcClient:
         device_id: str,
         payload: RebootPayload,
         ttl: int | None = 5,
-    ) -> ResponseWaiter[BaseResponse]:
+    ) -> ResponseWaiter[AckResponse]:
         return await self._send_message(
             device_id=device_id,
             topic="client/reboot/set",
@@ -185,7 +194,7 @@ class NpcClient:
         device_id: str,
         payload: SetStatePayload,
         ttl: int | None = 5,
-    ) -> ResponseWaiter[BaseResponse]:
+    ) -> ResponseWaiter[AckResponse]:
         return await self._send_message(
             device_id=device_id,
             topic="client/state/set",

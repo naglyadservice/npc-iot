@@ -100,25 +100,7 @@ class Dispatcher:
 
     @property
     def _callback_handlers(self):
-        instance_members = [
-            value for value in self.__dict__.values() if isinstance(value, MessageHandler)
-        ]
-
-        # Optionally, also include MessageHandler attributes defined on the class
-        class_members = []
-        for cls in self.__class__.__mro__:
-            for name, value in cls.__dict__.items():
-                if isinstance(value, MessageHandler):
-                    class_members.append(value)
-
-        # Merge and remove duplicates while preserving order.
-        seen = set()
-        result = []
-        for member in instance_members + class_members:
-            if id(member) not in seen:
-                seen.add(id(member))
-                result.append(member)
-        return result
+        return [value for value in self.__dict__.values() if isinstance(value, MessageHandler)]
 
     @asynccontextmanager
     async def start_handling(self, connector: BaseConnector) -> AsyncIterator[None]:

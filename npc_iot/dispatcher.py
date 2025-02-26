@@ -74,21 +74,6 @@ class MessageHandler:
 
 
 class Dispatcher:
-    begin = MessageHandler(topic="/+/server/begin")
-    reboot_ack = MessageHandler(topic="/+/server/reboot/ack", is_ack=True)
-    config_ack = MessageHandler(topic="/+/server/config/ack", is_ack=True)
-    config = MessageHandler(topic="/+/server/config")
-    setting_ack = MessageHandler(topic="/+/server/setting/ack", is_ack=True)
-    setting = MessageHandler(topic="/+/server/server/setting")
-    state_ack = MessageHandler(topic="/+/server/state/ack", is_ack=True)
-    state = MessageHandler(topic="/+/server/state", is_result=True)
-    state_info = MessageHandler(topic="/+/server/state/info")
-
-    @property
-    def _callback_handlers(self):
-        members = inspect.getmembers(self, predicate=lambda x: isinstance(x, MessageHandler))
-        return [value for name, value in members]
-
     def __init__(
         self,
         topic_prefix: str,
@@ -99,11 +84,20 @@ class Dispatcher:
         self._payload_decoder = payload_decoder
         self._callback_kwargs = callback_kwargs
 
-        self._handler_kwargs = {
-            "topic_prefix": topic_prefix,
-            "payload_decoder": payload_decoder,
-            "callback_kwargs": callback_kwargs,
-        }
+        self.begin = MessageHandler(topic="/+/server/begin")
+        self.reboot_ack = MessageHandler(topic="/+/server/reboot/ack", is_ack=True)
+        self.config_ack = MessageHandler(topic="/+/server/config/ack", is_ack=True)
+        self.config = MessageHandler(topic="/+/server/config")
+        self.setting_ack = MessageHandler(topic="/+/server/setting/ack", is_ack=True)
+        self.setting = MessageHandler(topic="/+/server/server/setting")
+        self.state_ack = MessageHandler(topic="/+/server/state/ack", is_ack=True)
+        self.state = MessageHandler(topic="/+/server/state", is_result=True)
+        self.state_info = MessageHandler(topic="/+/server/state/info")
+
+    @property
+    def _callback_handlers(self):
+        members = inspect.getmembers(self, predicate=lambda x: isinstance(x, MessageHandler))
+        return [value for name, value in members]
 
     @asynccontextmanager
     async def start_handling(self, connector: BaseConnector) -> AsyncIterator[None]:

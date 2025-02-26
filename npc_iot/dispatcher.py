@@ -83,17 +83,9 @@ class Dispatcher:
     state = MessageHandler(topic="/+/server/state", is_result=True)
     state_info = MessageHandler(topic="/+/server/state/info")
 
-    _callback_handlers = [
-        begin,
-        reboot_ack,
-        config_ack,
-        config,
-        setting_ack,
-        setting,
-        state_ack,
-        state,
-        state_info,
-    ]
+    @property
+    def _callback_handlers(self):
+        return [item for item in self.__dict__.values() if isinstance(item, MessageHandler)]
 
     def __init__(
         self,

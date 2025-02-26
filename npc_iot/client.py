@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import secrets
 from contextlib import AsyncExitStack
@@ -18,6 +17,7 @@ from .connectors.base import BaseConnector
 from .connectors.mqttproto_connector import MqttprotoConnector
 from .dispatcher import Dispatcher
 from .exception import DeviceResponceError
+from .response import ResponseWaiter
 from .types import (
     AckResponse,
     BaseResponse,
@@ -41,25 +41,6 @@ class RequestIdGenerator(Protocol):
 ResponseWaiterType = TypeVar("ResponseWaiterType", bound=BaseResponse)
 
 DispatcherType = TypeVar("DispatcherType", bound=Dispatcher)
-
-
-class ResponseWaiter[ResponseWaiterType]:
-    def __init__(self, device_id: str, request_id: int, ttl: int | None) -> None:
-        self.device_id = device_id
-        self.request_id = request_id
-        self.ttl = ttl
-        self._future = asyncio.Future()
-
-    def _set_result(self, result: dict[str, Any]) -> None:
-        self._future.set_result(result)
-
-    def _set_exception(self, exception: Exception) -> None:
-        self._future.set_exception(exception)
-
-    async def wait(self, timeout: float | None = 60) -> ResponseWaiterType:
-        if timeout is None:
-            return await self._future
-        return await asyncio.wait_for(self._future, timeout)
 
 
 class NpcClient(Generic[DispatcherType]):

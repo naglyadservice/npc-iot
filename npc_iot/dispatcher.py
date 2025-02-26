@@ -97,3 +97,12 @@ class Dispatcher:
                 await exit_stack.enter_async_context(callback_handler.handle_messages(connector))
 
             yield
+
+    def register_callbacks(
+        self, result_callback: Callable[[str, dict[str, Any]], Coroutine]
+    ) -> None:
+        self.reboot_ack.register_callback(result_callback)
+        self.state_ack.register_callback(result_callback)
+        self.config_ack.register_callback(result_callback)
+        self.setting_ack.register_callback(result_callback)
+        self.state.register_callback(result_callback)

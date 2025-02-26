@@ -2,7 +2,7 @@ import asyncio
 import logging
 import secrets
 from contextlib import AsyncExitStack
-from typing import Any, Callable, Literal, Mapping, Protocol, Self, TypeVar
+from typing import Any, Callable, Generic, Literal, Mapping, Protocol, Self, Type, TypeVar
 
 try:
     import orjson as json
@@ -40,6 +40,8 @@ class RequestIdGenerator(Protocol):
 
 ResponseWaiterType = TypeVar("ResponseWaiterType", bound=BaseResponse)
 
+DispatcherType = TypeVar("DispatcherType", bound=Dispatcher)
+
 
 class ResponseWaiter[ResponseWaiterType]:
     def __init__(self, device_id: str, request_id: int, ttl: int | None) -> None:
@@ -60,7 +62,7 @@ class ResponseWaiter[ResponseWaiterType]:
         return await asyncio.wait_for(self._future, timeout)
 
 
-class NpcClient:
+class NpcClient(Generic[DispatcherType]):
     def __init__(
         self,
         connector: BaseConnector | None = None,
@@ -75,6 +77,7 @@ class NpcClient:
         payload_encoder: Callable[[Any], str | bytes] = json.dumps,
         payload_decoder: Callable[[str | bytes], Any] = json.loads,
         request_id_generator: RequestIdGenerator = _defult_request_id_generator,
+        dispatcher_class: Type[DispatcherType] = Dispatcher,
     ) -> None:
         if connector is not None and any(
             (host, port, ssl, client_id, username, password, clean_start)
@@ -116,12 +119,8 @@ class NpcClient:
         self._payload_encoder = payload_encoder
         self._payload_decoder = payload_decoder
 
-        self.dispatcher = Dispatcher(payload_decoder=payload_decoder)
-        self.dispatcher.reboot_ack.register_callback(self._result_callback)
-        self.dispatcher.state_ack.register_callback(self._result_callback)
-        self.dispatcher.config_ack.register_callback(self._result_callback)
-        self.dispatcher.setting_ack.register_callback(self._result_callback)
-        self.dispatcher.state.register_callback(self._result_callback)
+        self.dispatcher = dispatcher_class(payload_decoder=payload_decoder)
+        self.dispatcher.register_callbacks(self._result_callback)
 
     async def __aenter__(self) -> Self:
         async with AsyncExitStack() as exit_stack:

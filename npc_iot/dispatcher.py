@@ -104,16 +104,12 @@ class Dispatcher:
             value for value in self.__dict__.values() if isinstance(value, MessageHandler)
         ]
 
-        print(instance_members)
-
         # Optionally, also include MessageHandler attributes defined on the class
         class_members = []
         for cls in self.__class__.__mro__:
             for name, value in cls.__dict__.items():
                 if isinstance(value, MessageHandler):
                     class_members.append(value)
-
-        print(class_members)
 
         # Merge and remove duplicates while preserving order.
         seen = set()

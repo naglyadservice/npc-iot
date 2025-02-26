@@ -1,17 +1,8 @@
 import asyncio
 import logging
-import secrets
-from typing import Any, Protocol
+from typing import Any
 
 log = logging.getLogger(__name__)
-
-
-async def _defult_request_id_generator() -> int:
-    return secrets.randbits(16)
-
-
-class RequestIdGenerator(Protocol):
-    async def __call__(self) -> int: ...
 
 
 class ResponseWaiter:

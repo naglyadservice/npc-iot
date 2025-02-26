@@ -30,4 +30,8 @@ class ResponseWaiter:
     async def wait(self, timeout: float | None = 60) -> dict[str, Any]:
         if timeout is None:
             return await self._future
-        return await asyncio.wait_for(self._future, timeout)
+        try:
+            return await asyncio.wait_for(self._future, timeout)
+        except asyncio.TimeoutError:
+            self._future.cancel("timeout")
+            raise

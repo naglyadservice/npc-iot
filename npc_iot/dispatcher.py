@@ -46,12 +46,8 @@ class MessageHandler:
     ) -> None:
         decoded_payload = payload_decoder(payload)
         device_id = _extract_device_id(topic_prefix, topic)
-        asyncio.gather(
-            *[
-                callback(device_id, decoded_payload, **callback_kwargs)
-                for callback in self._callbacks
-            ]
-        )
+        for callback in self._callbacks:
+            asyncio.create_task(callback(device_id, decoded_payload, **callback_kwargs))
 
     @asynccontextmanager
     async def handle_messages(

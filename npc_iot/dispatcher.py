@@ -9,8 +9,8 @@ from .connectors.base import BaseConnector
 log = logging.getLogger(__name__)
 
 
-def _extract_device_id(topic: str) -> str:
-    m = re.search(r"v2/(\w+)/", topic)
+def _extract_device_id(topic_prefix: str, topic: str) -> str:
+    m = re.search(rf"{topic_prefix}/(\w+)/", topic)
     if m is None:
         raise ValueError(f"Invalid topic: {topic}")
 
@@ -20,10 +20,12 @@ def _extract_device_id(topic: str) -> str:
 class MessageHandler:
     def __init__(
         self,
+        topic_prefix: str,
         topic: str,
         payload_decoder: Callable[[str | bytes], Any],
         callback_kwargs: dict[str, Any] | None = None,
     ) -> None:
+        self._topic_prefix = topic_prefix
         self.topic = topic
         self._payload_decoder = payload_decoder
         self._callback_kwargs = callback_kwargs or {}
@@ -42,7 +44,7 @@ class MessageHandler:
 
     async def _handle_message(self, topic: str, payload: str | bytes) -> None:
         decoded_payload = self._payload_decoder(payload)
-        device_id = _extract_device_id(topic)
+        device_id = _extract_device_id(self._topic_prefix, topic)
         asyncio.gather(
             *[
                 callback(device_id, decoded_payload, **self._callback_kwargs)
@@ -59,6 +61,7 @@ class MessageHandler:
 class Dispatcher:
     def __init__(
         self,
+        topic_prefix: str,
         payload_decoder: Callable[[str | bytes], Any],
         callback_kwargs: dict[str, Any] | None = None,
     ) -> None:
@@ -68,15 +71,15 @@ class Dispatcher:
             "callback_kwargs": callback_kwargs,
         }
 
-        self.begin = MessageHandler("v2/+/server/begin", **kwargs)
-        self.reboot_ack = MessageHandler("v2/+/server/reboot/ack", **kwargs)
-        self.config_ack = MessageHandler("v2/+/server/config/ack", **kwargs)
-        self.config = MessageHandler("v2/+/server/config", **kwargs)
-        self.setting_ack = MessageHandler("v2/+/server/setting/ack", **kwargs)
-        self.setting = MessageHandler("v2/+/server/setting", **kwargs)
-        self.state_ack = MessageHandler("v2/+/server/state/ack", **kwargs)
-        self.state = MessageHandler("v2/+/server/state", **kwargs)
-        self.state_info = MessageHandler("v2/+/server/state/info", **kwargs)
+        self.begin = MessageHandler(f"{topic_prefix}/+/server/begin", **kwargs)
+        self.reboot_ack = MessageHandler(f"{topic_prefix}/+/server/reboot/ack", **kwargs)
+        self.config_ack = MessageHandler(f"{topic_prefix}/+/server/config/ack", **kwargs)
+        self.config = MessageHandler(f"{topic_prefix}/+/server/config", **kwargs)
+        self.setting_ack = MessageHandler(f"{topic_prefix}/+/server/setting/ack", **kwargs)
+        self.setting = MessageHandler(f"{topic_prefix}/+/server/setting", **kwargs)
+        self.state_ack = MessageHandler(f"{topic_prefix}/+/server/state/ack", **kwargs)
+        self.state = MessageHandler(f"{topic_prefix}/+/server/state", **kwargs)
+        self.state_info = MessageHandler(f"{topic_prefix}/+/server/state/info", **kwargs)
 
         self._callback_handlers = [
             self.begin,

@@ -119,7 +119,9 @@ class NpcClient(Generic[DispatcherType]):
         self._payload_encoder = payload_encoder
         self._payload_decoder = payload_decoder
 
-        self.dispatcher = dispatcher_class(payload_decoder=payload_decoder)
+        self.dispatcher = dispatcher_class(
+            topic_prefix=topic_prefix, payload_decoder=payload_decoder
+        )
         self.dispatcher.register_callbacks(self._result_callback)
 
     async def __aenter__(self) -> Self:

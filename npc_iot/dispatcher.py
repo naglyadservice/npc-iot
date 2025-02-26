@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 import re
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -85,7 +86,8 @@ class Dispatcher:
 
     @property
     def _callback_handlers(self):
-        return [item for item in self.__dict__.values() if isinstance(item, MessageHandler)]
+        members = inspect.getmembers(self, predicate=lambda x: isinstance(x, MessageHandler))
+        return [value for name, value in members]
 
     def __init__(
         self,

@@ -1,7 +1,7 @@
 import logging
 import secrets
 from contextlib import AsyncExitStack
-from typing import Any, Callable, Generic, Literal, Mapping, Protocol, Self, Type, TypeVar
+from typing import Any, Callable, Generic, Literal, Mapping, Protocol, Self, TypeVar
 
 try:
     import orjson as json
@@ -58,7 +58,7 @@ class NpcClient(Generic[DispatcherType]):
         payload_encoder: Callable[[Any], str | bytes] = json.dumps,
         payload_decoder: Callable[[str | bytes], Any] = json.loads,
         request_id_generator: RequestIdGenerator = _defult_request_id_generator,
-        dispatcher_class: Type[DispatcherType] = Dispatcher,
+        dispatcher: DispatcherType | None = None,
     ) -> None:
         if connector is not None and any(
             (host, port, ssl, client_id, username, password, clean_start)
@@ -100,15 +100,23 @@ class NpcClient(Generic[DispatcherType]):
         self._payload_encoder = payload_encoder
         self._payload_decoder = payload_decoder
 
-        self.dispatcher = dispatcher_class(
-            topic_prefix=topic_prefix, payload_decoder=payload_decoder
-        )
+        if dispatcher is None:
+            self.dispatcher = Dispatcher()
+        else:
+            self.dispatcher = dispatcher
+
         self.dispatcher.register_callbacks(self._result_callback)
 
     async def __aenter__(self) -> Self:
         async with AsyncExitStack() as exit_stack:
             await exit_stack.enter_async_context(self._connector)
-            await exit_stack.enter_async_context(self.dispatcher.start_handling(self._connector))
+            await exit_stack.enter_async_context(
+                self.dispatcher.start_handling(
+                    connector=self._connector,
+                    topic_prefix=self._topic_prefix,
+                    payload_decoder=self._payload_decoder,
+                )
+            )
             self._exit_stack = exit_stack.pop_all()
 
         return self

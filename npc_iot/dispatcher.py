@@ -74,15 +74,8 @@ class MessageHandler:
 
 
 class Dispatcher:
-    def __init__(
-        self,
-        topic_prefix: str,
-        payload_decoder: Callable[[str | bytes], Any],
-        callback_kwargs: dict[str, Any] | None = None,
-    ) -> None:
-        self._topic_prefix = topic_prefix
-        self._payload_decoder = payload_decoder
-        self._callback_kwargs = callback_kwargs
+    def __init__(self, callback_kwargs: dict[str, Any] | None = None) -> None:
+        self._callback_kwargs = callback_kwargs or {}
 
         self.begin = MessageHandler(topic="/+/server/begin")
         self.reboot_ack = MessageHandler(topic="/+/server/reboot/ack", is_ack=True)
@@ -99,14 +92,19 @@ class Dispatcher:
         return [value for value in self.__dict__.values() if isinstance(value, MessageHandler)]
 
     @asynccontextmanager
-    async def start_handling(self, connector: BaseConnector) -> AsyncIterator[None]:
+    async def start_handling(
+        self,
+        connector: BaseConnector,
+        topic_prefix: str,
+        payload_decoder: Callable[[str | bytes], Any],
+    ) -> AsyncIterator[None]:
         async with AsyncExitStack() as exit_stack:
             for callback_handler in self._callback_handlers:
                 await exit_stack.enter_async_context(
                     callback_handler.handle_messages(
                         connector,
-                        topic_prefix=self._topic_prefix,
-                        payload_decoder=self._payload_decoder,
+                        topic_prefix=topic_prefix,
+                        payload_decoder=payload_decoder,
                         callback_kwargs=self._callback_kwargs,
                     )
                 )

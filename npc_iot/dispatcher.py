@@ -3,7 +3,7 @@ import logging
 import re
 from contextlib import AsyncExitStack, asynccontextmanager
 from functools import partial
-from typing import Any, AsyncIterator, Callable, Coroutine
+from typing import Any, AsyncIterator, Callable, Protocol
 
 from .connectors.base import BaseConnector
 
@@ -18,17 +18,21 @@ def _extract_device_id(topic_prefix: str, topic: str) -> str:
     return m.group(1)
 
 
+class CallbackType(Protocol):
+    async def __call__(self, topic: str, payload: dict[str, Any], **kwargs) -> None: ...
+
+
 class MessageHandler:
     def __init__(self, topic: str, is_ack: bool = False, is_result: bool = False) -> None:
         self.topic = topic
         self.is_ack = is_ack
         self.is_result = is_result
-        self._callbacks: list[Callable[[str, dict[str, Any]], Coroutine]] = []
+        self._callbacks: list[CallbackType] = []
 
-    def register_callback(self, callback: Callable[[str, dict[str, Any]], Coroutine]) -> None:
+    def register_callback(self, callback: CallbackType) -> None:
         self._callbacks.append(callback)
 
-    def remove_callback(self, callback: Callable[[str, dict[str, Any]], Coroutine]) -> None:
+    def remove_callback(self, callback: CallbackType) -> None:
         for i, f in enumerate(self._callbacks):
             if f is callback:
                 del self._callbacks[i]
@@ -111,9 +115,7 @@ class Dispatcher:
 
             yield
 
-    def register_callbacks(
-        self, result_callback: Callable[[str, dict[str, Any]], Coroutine]
-    ) -> None:
+    def register_callbacks(self, result_callback: CallbackType) -> None:
         for callback_handler in self._callback_handlers:
             if callback_handler.is_ack or callback_handler.is_result:
                 callback_handler.register_callback(result_callback)

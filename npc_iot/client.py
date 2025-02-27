@@ -154,7 +154,7 @@ class NpcClient(Generic[DispatcherType]):
 
         return response_waiter
 
-    async def _result_callback(self, device_id: str, payload: dict[str, Any]) -> None:
+    async def _result_callback(self, device_id: str, payload: dict[str, Any], **kwargs) -> None:
         request_id = payload["request_id"]
         if request_id not in self._response_waiters:
             return

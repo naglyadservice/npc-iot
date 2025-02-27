@@ -3,7 +3,15 @@ import logging
 import re
 from contextlib import AsyncExitStack, asynccontextmanager
 from functools import partial
-from typing import Any, AsyncIterator, Callable, Protocol
+from typing import (
+    Any,
+    AsyncIterator,
+    Callable,
+    Concatenate,
+    Coroutine,
+    Dict,
+    ParamSpec,
+)
 
 from .connectors.base import BaseConnector
 
@@ -18,8 +26,9 @@ def _extract_device_id(topic_prefix: str, topic: str) -> str:
     return m.group(1)
 
 
-class CallbackType(Protocol):
-    async def __call__(self, topic: str, payload: dict[str, Any], **kwargs) -> None: ...
+P = ParamSpec("P")
+
+CallbackType = Callable[Concatenate[str, Dict[str, Any], P], Coroutine]
 
 
 class MessageHandler:

@@ -54,7 +54,7 @@ class NpcClient(Generic[DispatcherType]):
         username: str | None = None,
         password: str | None = None,
         clean_start: bool | None = None,
-        topic_prefix: str = "v2/",
+        topic_prefix: str = "v2",
         payload_encoder: Callable[[Any], str | bytes] = json.dumps,
         payload_decoder: Callable[[str | bytes], Any] = json.loads,
         request_id_generator: RequestIdGenerator = _defult_request_id_generator,

@@ -57,7 +57,12 @@ class MessageHandler:
         topic_prefix: str,
         callback_kwargs: dict[str, Any],
     ) -> None:
-        decoded_payload = payload_decoder(payload)
+        try:
+            decoded_payload = payload_decoder(payload)
+        except Exception as e:
+            log.error(f"Failed to decode payload, topic: {topic}, payload: {payload}", exc_info=e)
+            return
+
         device_id = _extract_device_id(topic_prefix, topic)
         for callback in self._callbacks:
             asyncio.create_task(callback(device_id, decoded_payload, **callback_kwargs))

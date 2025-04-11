@@ -58,6 +58,7 @@ class MessageHandler:
         callback_kwargs: dict[str, Any],
     ) -> None:
         try:
+            log.info(f"Received message, topic: {topic}, payload: {payload}")
             decoded_payload = payload_decoder(payload)
         except Exception as e:
             log.error(f"Failed to decode payload, topic: {topic}, payload: {payload}", exc_info=e)

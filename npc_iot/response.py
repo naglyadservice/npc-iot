@@ -18,10 +18,16 @@ class ResponseWaiter[ResponseWaiterType]:
         self._future = asyncio.Future()
 
     def _set_result(self, result: dict[str, Any]) -> None:
-        self._future.set_result(result)
+        if not self._future.done():
+            self._future.set_result(result)
+        else:
+            log.warning(f"Future for {self.request_id} already done or cancelled")
 
     def _set_exception(self, exception: Exception) -> None:
-        self._future.set_exception(exception)
+        if not self._future.done():
+            self._future.set_exception(exception)
+        else:
+            log.warning(f"Future for {self.request_id} already done or cancelled")
 
     async def wait(self, timeout: float | None = 60) -> ResponseWaiterType:
         if timeout is None:

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from typing import AsyncIterator
 
@@ -6,6 +7,8 @@ from mqttproto import PropertyType, QoS
 from mqttproto.async_client import AsyncMQTTClient
 
 from .base import BaseConnector, CallbackType
+
+logger = logging.getLogger(__name__)
 
 
 class MqttprotoConnector(BaseConnector):
@@ -67,6 +70,7 @@ class MqttprotoConnector(BaseConnector):
 
     @asynccontextmanager
     async def subscribe(self, topic: str, callback: CallbackType) -> AsyncIterator[None]:
+        logger.info(f"Subscribing to topic: {topic}")
         task = asyncio.create_task(self._subscribe(topic, callback))
         try:
             yield

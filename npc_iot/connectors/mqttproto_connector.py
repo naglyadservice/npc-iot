@@ -76,4 +76,5 @@ class MqttprotoConnector(BaseConnector):
             yield
         finally:
             task.cancel()
-            await task
+            with suppress(asyncio.CancelledError):
+                await task

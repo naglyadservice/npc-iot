@@ -49,6 +49,16 @@ class MessageHandler:
 
         raise ValueError("Callback not found")
 
+    async def _process_callbacks(
+        self, device_id: str, decoded_payload: Any, **callback_kwargs: dict[str, Any]
+    ) -> None:
+        await asyncio.gather(
+            *[
+                callback(device_id, decoded_payload, **callback_kwargs)
+                for callback in self._callbacks
+            ]
+        )
+
     async def _handle_message(
         self,
         topic: str,
@@ -64,8 +74,7 @@ class MessageHandler:
             return
 
         device_id = _extract_device_id(topic_prefix, topic)
-        for callback in self._callbacks:
-            asyncio.create_task(callback(device_id, decoded_payload, **callback_kwargs))
+        asyncio.create_task(self._process_callbacks(device_id, decoded_payload, **callback_kwargs))
 
     @asynccontextmanager
     async def handle_messages(

@@ -4,32 +4,28 @@ import logging
 import re
 from contextlib import AsyncExitStack, asynccontextmanager
 from functools import partial
-from typing import (
-    Any,
-    AsyncIterator,
-    Callable,
-    Concatenate,
-    Coroutine,
-    Dict,
-    ParamSpec,
-)
+from typing import Any, AsyncIterator, Callable, Concatenate, Coroutine, Dict, ParamSpec, Protocol
 
 from ..connectors.base import BaseConnector
 
 log = logging.getLogger(__name__)
 
 
-def _extract_device_id(topic_prefix: str, topic: str) -> str:
+P = ParamSpec("P")
+
+CallbackType = Callable[Concatenate[str, Dict[str, Any], P], Coroutine]
+
+
+class DeviceIdParser(Protocol):
+    def __call__(self, topic_prefix: str, topic: str) -> str: ...
+
+
+def _parse_device_id(topic_prefix: str, topic: str) -> str:
     m = re.search(rf"{topic_prefix}/(\w+)/", topic)
     if m is None:
         raise ValueError(f"Invalid topic: {topic}")
 
     return m.group(1)
-
-
-P = ParamSpec("P")
-
-CallbackType = Callable[Concatenate[str, Dict[str, Any], P], Coroutine]
 
 
 class MessageHandler:
@@ -38,11 +34,13 @@ class MessageHandler:
         topic: str,
         is_ack: bool = False,
         is_result: bool = False,
+        device_id_parser: DeviceIdParser = _parse_device_id,
     ) -> None:
         self.topic = topic
         self.is_ack = is_ack
         self.is_result = is_result
         self._callbacks: list[CallbackType] = []
+        self._device_id_parser = device_id_parser
 
     def register_callback(self, callback: CallbackType) -> None:
         self._callbacks.append(callback)
@@ -79,7 +77,7 @@ class MessageHandler:
             log.error(f"Failed to decode payload, topic: {topic}, payload: {payload}", exc_info=e)
             return
 
-        device_id = _extract_device_id(topic_prefix, topic)
+        device_id = self._device_id_parser(topic_prefix, topic)
         asyncio.create_task(self._process_callbacks(device_id, decoded_payload, **callback_kwargs))
 
     @asynccontextmanager
@@ -97,7 +95,6 @@ class MessageHandler:
             topic_prefix=topic_prefix,
             callback_kwargs=callback_kwargs or {},
         )
-
         topic = f"{topic_prefix}{self.topic}"
 
         if share_group_name and not (self.is_ack or self.is_result):

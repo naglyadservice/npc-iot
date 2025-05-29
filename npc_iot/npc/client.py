@@ -41,6 +41,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         payload_decoder: Callable[[str | bytes], Any] = json.loads,
         request_id_generator: RequestIdGenerator = _defult_request_id_generator,
         dispatcher_class: Type[DispatcherType] = NpcDispatcher,
+        dispatcher_kwargs: dict[str, Any] | None = None,
     ):
         super().__init__(
             connector=connector,
@@ -56,6 +57,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
             payload_decoder=payload_decoder,
             request_id_generator=request_id_generator,
             dispatcher_class=dispatcher_class,
+            dispatcher_kwargs=dispatcher_kwargs,
         )
 
     async def reboot(

@@ -42,6 +42,7 @@ class BaseClient(Generic[DispatcherType]):
         payload_decoder: Callable[[str | bytes], Any] = json.loads,
         request_id_generator: RequestIdGenerator = _defult_request_id_generator,
         dispatcher_class: Type[DispatcherType] = BaseDispatcher,
+        dispatcher_kwargs: dict[str, Any] | None = None,
     ) -> None:
         if connector is not None and any(
             (host, port, ssl, client_id, username, password, clean_start)
@@ -83,8 +84,7 @@ class BaseClient(Generic[DispatcherType]):
         self._payload_encoder = payload_encoder
         self._payload_decoder = payload_decoder
 
-        self.dispatcher = dispatcher_class()
-
+        self.dispatcher = dispatcher_class(**(dispatcher_kwargs or {}))
         self.dispatcher.register_callbacks(self._result_callback)
 
     async def __aenter__(self) -> Self:

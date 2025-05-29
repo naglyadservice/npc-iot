@@ -1,5 +1,7 @@
 from typing import NotRequired, TypedDict
 
+from ..base.types import AckResponse, BaseResponse
+
 
 class RebootPayload(TypedDict):
     delay: int
@@ -41,18 +43,23 @@ class SensorStateInfo(TypedDict):
     value: float
 
 
-class BaseResponse(TypedDict):
-    request_id: str
-    code: NotRequired[int]
-
-
-class AckResponse(BaseResponse):
-    pass
-
-
 class GetStateResponse(BaseResponse):
     relay: list[PinStateInfo]
     output: list[PinStateInfo]
     input: list[PinStateInfo]
     temperature: NotRequired[list[SensorStateInfo]]
     humidity: NotRequired[list[SensorStateInfo]]
+
+
+__all__ = [
+    "AckResponse",
+    "BaseResponse",
+    "RebootPayload",
+    "SetStateRelay",
+    "SetStateOutput",
+    "SetStatePayload",
+    "GetStatePayload",
+    "GetStateResponse",
+    "PinStateInfo",
+    "SensorStateInfo",
+]

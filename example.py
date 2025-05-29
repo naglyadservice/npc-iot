@@ -2,9 +2,8 @@ import asyncio
 from pprint import pprint
 from typing import Any
 
-from npc_iot import NpcClient
-
 DEVICE_ID = "6CA3AC182EC8"
+from npc_iot.npc import NpcClient
 
 
 async def callback(device_id: str, payload: dict[str, Any]):
@@ -13,12 +12,9 @@ async def callback(device_id: str, payload: dict[str, Any]):
 
 
 async def main():
-    async with NpcClient(
-        host="mqtt.npc.com.ua",
-        port=1883,
-        username=...,
-        password=...,
-    ) as npc_client:
+    npc_client = NpcClient(host="mqtt.npc.com.ua", port=1883, username="", password="")
+
+    async with npc_client as npc_client:
         npc_client.dispatcher.state_info.register_callback(callback)
 
         # Send command to device without waiting for response

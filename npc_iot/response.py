@@ -1,13 +1,22 @@
 import asyncio
 import logging
-from typing import Any, TypeVar
+import secrets
+from typing import Any, Protocol, TypeVar
 
-from .types import BaseResponse
+from .base.types import BaseResponse
 
 log = logging.getLogger(__name__)
 
 
 ResponseWaiterType = TypeVar("ResponseWaiterType", bound=BaseResponse)
+
+
+async def _defult_request_id_generator() -> int:
+    return secrets.randbits(16)
+
+
+class RequestIdGenerator(Protocol):
+    async def __call__(self) -> int: ...
 
 
 class ResponseWaiter[ResponseWaiterType]:

@@ -1,10 +1,9 @@
 import logging
-import secrets
 from contextlib import AsyncExitStack
-from typing import Any, Callable, Generic, Literal, Mapping, Protocol, Self, TypeVar
+from typing import Any, Callable, Generic, Literal, Mapping, Self, Type, TypeVar
 
 try:
-    import orjson as json
+    import orjson as json  # type: ignore
 except ImportError:
     import json
 
@@ -13,37 +12,21 @@ try:
 except ImportError:
     AsyncMQTTClient = None
 
-from .connectors.base import BaseConnector
-from .connectors.mqttproto_connector import MqttprotoConnector
-from .dispatcher import Dispatcher
-from .exception import DeviceResponceError
-from .response import ResponseWaiter
-from .types import (
-    AckResponse,
-    BaseResponse,
-    GetStatePayload,
-    GetStateResponse,
-    RebootPayload,
-    SetStatePayload,
-)
+from ..connectors.base import BaseConnector
+from ..connectors.mqttproto_connector import MqttprotoConnector
+from ..exception import DeviceResponceError
+from ..response import RequestIdGenerator, ResponseWaiter, _defult_request_id_generator
+from .dispatcher import BaseDispatcher
 
 log = logging.getLogger(__name__)
 
 
-async def _defult_request_id_generator() -> int:
-    return secrets.randbits(16)
+DispatcherType = TypeVar("DispatcherType", bound=BaseDispatcher)
 
 
-class RequestIdGenerator(Protocol):
-    async def __call__(self) -> int: ...
+class BaseClient(Generic[DispatcherType]):
+    dispatcher: DispatcherType
 
-
-ResponseWaiterType = TypeVar("ResponseWaiterType", bound=BaseResponse)
-
-DispatcherType = TypeVar("DispatcherType", bound=Dispatcher)
-
-
-class NpcClient(Generic[DispatcherType]):
     def __init__(
         self,
         connector: BaseConnector | None = None,
@@ -54,11 +37,11 @@ class NpcClient(Generic[DispatcherType]):
         username: str | None = None,
         password: str | None = None,
         clean_start: bool | None = None,
-        topic_prefix: str = "v2",
+        topic_prefix: str = "",
         payload_encoder: Callable[[Any], str | bytes] = json.dumps,
         payload_decoder: Callable[[str | bytes], Any] = json.loads,
         request_id_generator: RequestIdGenerator = _defult_request_id_generator,
-        dispatcher: DispatcherType | None = None,
+        dispatcher_class: Type[DispatcherType] = BaseDispatcher,
     ) -> None:
         if connector is not None and any(
             (host, port, ssl, client_id, username, password, clean_start)
@@ -100,10 +83,7 @@ class NpcClient(Generic[DispatcherType]):
         self._payload_encoder = payload_encoder
         self._payload_decoder = payload_decoder
 
-        if dispatcher is None:
-            self.dispatcher = Dispatcher()
-        else:
-            self.dispatcher = dispatcher
+        self.dispatcher = dispatcher_class()
 
         self.dispatcher.register_callbacks(self._result_callback)
 
@@ -167,45 +147,3 @@ class NpcClient(Generic[DispatcherType]):
             return
 
         self._response_waiters[request_id]._set_result(payload)
-
-    async def reboot(
-        self,
-        device_id: str,
-        payload: RebootPayload,
-        ttl: int | None = 5,
-    ) -> ResponseWaiter[AckResponse]:
-        return await self._send_message(
-            device_id=device_id,
-            topic="client/reboot/set",
-            qos=1,
-            payload=payload,
-            ttl=ttl,
-        )
-
-    async def set_state(
-        self,
-        device_id: str,
-        payload: SetStatePayload,
-        ttl: int | None = 5,
-    ) -> ResponseWaiter[AckResponse]:
-        return await self._send_message(
-            device_id=device_id,
-            topic="client/state/set",
-            qos=2,
-            payload=payload,
-            ttl=ttl,
-        )
-
-    async def get_state(
-        self,
-        device_id: str,
-        payload: GetStatePayload,
-        ttl: int | None = 5,
-    ) -> ResponseWaiter[GetStateResponse]:
-        return await self._send_message(
-            device_id=device_id,
-            topic="client/state/get",
-            qos=1,
-            payload=payload,
-            ttl=ttl,
-        )

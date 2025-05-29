@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 import re
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -13,7 +14,7 @@ from typing import (
     ParamSpec,
 )
 
-from .connectors.base import BaseConnector
+from ..connectors.base import BaseConnector
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +33,12 @@ CallbackType = Callable[Concatenate[str, Dict[str, Any], P], Coroutine]
 
 
 class MessageHandler:
-    def __init__(self, topic: str, is_ack: bool = False, is_result: bool = False) -> None:
+    def __init__(
+        self,
+        topic: str,
+        is_ack: bool = False,
+        is_result: bool = False,
+    ) -> None:
         self.topic = topic
         self.is_ack = is_ack
         self.is_result = is_result
@@ -83,6 +89,7 @@ class MessageHandler:
         topic_prefix: str,
         payload_decoder: Callable[[str | bytes], Any],
         callback_kwargs: dict[str, Any] | None = None,
+        share_group_name: str | None = None,
     ) -> AsyncIterator[None]:
         callback = partial(
             self._handle_message,
@@ -91,7 +98,12 @@ class MessageHandler:
             callback_kwargs=callback_kwargs or {},
         )
 
-        async with connector.subscribe(topic=f"{topic_prefix}{self.topic}", callback=callback):
+        topic = f"{topic_prefix}{self.topic}"
+
+        if share_group_name and not (self.is_ack or self.is_result):
+            topic = f"$share/{share_group_name}/{topic}"
+
+        async with connector.subscribe(topic, callback=callback):
             yield
 
     def __repr__(self) -> str:
@@ -100,23 +112,29 @@ class MessageHandler:
         )
 
 
-class Dispatcher:
-    def __init__(self, callback_kwargs: dict[str, Any] | None = None) -> None:
+class BaseDispatcher:
+    begin = MessageHandler(topic="/+/server/begin")
+    reboot_ack = MessageHandler(topic="/+/server/reboot/ack", is_ack=True)
+    config_ack = MessageHandler(topic="/+/server/config/ack", is_ack=True)
+    config = MessageHandler(topic="/+/server/config")
+    setting_ack = MessageHandler(topic="/+/server/setting/ack", is_ack=True)
+    setting = MessageHandler(topic="/+/server/server/setting")
+    state_ack = MessageHandler(topic="/+/server/state/ack", is_ack=True)
+    state = MessageHandler(topic="/+/server/state", is_result=True)
+    state_info = MessageHandler(topic="/+/server/state/info")
+
+    def __init__(
+        self, callback_kwargs: dict[str, Any] | None = None, share_group_name: str | None = None
+    ) -> None:
         self._callback_kwargs = callback_kwargs or {}
+        self._share_group_name = share_group_name
 
-        self.begin = MessageHandler(topic="/+/server/begin")
-        self.reboot_ack = MessageHandler(topic="/+/server/reboot/ack", is_ack=True)
-        self.config_ack = MessageHandler(topic="/+/server/config/ack", is_ack=True)
-        self.config = MessageHandler(topic="/+/server/config")
-        self.setting_ack = MessageHandler(topic="/+/server/setting/ack", is_ack=True)
-        self.setting = MessageHandler(topic="/+/server/server/setting")
-        self.state_ack = MessageHandler(topic="/+/server/state/ack", is_ack=True)
-        self.state = MessageHandler(topic="/+/server/state", is_result=True)
-        self.state_info = MessageHandler(topic="/+/server/state/info")
-
-    @property
-    def _callback_handlers(self):
-        return [value for value in self.__dict__.values() if isinstance(value, MessageHandler)]
+    def _get_callback_handlers(self) -> list[MessageHandler]:
+        handlers: list[MessageHandler] = []
+        for _, member in inspect.getmembers(self):
+            if isinstance(member, MessageHandler):
+                handlers.append(member)
+        return handlers
 
     @asynccontextmanager
     async def start_handling(
@@ -126,19 +144,20 @@ class Dispatcher:
         payload_decoder: Callable[[str | bytes], Any],
     ) -> AsyncIterator[None]:
         async with AsyncExitStack() as exit_stack:
-            for callback_handler in self._callback_handlers:
+            for callback_handler in self._get_callback_handlers():
                 await exit_stack.enter_async_context(
                     callback_handler.handle_messages(
                         connector,
                         topic_prefix=topic_prefix,
                         payload_decoder=payload_decoder,
                         callback_kwargs=self._callback_kwargs,
+                        share_group_name=self._share_group_name,
                     )
                 )
 
             yield
 
     def register_callbacks(self, result_callback: CallbackType) -> None:
-        for callback_handler in self._callback_handlers:
+        for callback_handler in self._get_callback_handlers():
             if callback_handler.is_ack or callback_handler.is_result:
                 callback_handler.register_callback(result_callback)

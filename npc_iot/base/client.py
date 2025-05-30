@@ -104,12 +104,12 @@ class BaseClient(Generic[DispatcherType]):
     async def __aexit__(self, exc_type, exc_value, traceback) -> None:
         await self._exit_stack.__aexit__(None, None, None)
 
-    async def _send_message(
+    async def send_message(
         self,
         device_id: str,
         topic: str,
         qos: Literal[0, 1, 2],
-        payload: Mapping[str, Any] | None,
+        payload: Mapping[str, Any] | str | bytes | None,
         ttl: int | None,
     ) -> ResponseWaiter:
         response_waiter = ResponseWaiter(
@@ -119,16 +119,13 @@ class BaseClient(Generic[DispatcherType]):
         )
         self._response_waiters[response_waiter.request_id] = response_waiter
 
-        new_payload = {
-            "request_id": response_waiter.request_id,
-        }
-        if payload is not None:
-            new_payload.update(payload)
+        if isinstance(payload, Mapping):
+            payload = {"request_id": response_waiter.request_id, **payload}
 
         await self._connector.send_message(
             topic=f"{self._topic_prefix}/{device_id}/{topic}",
             qos=qos,
-            payload=self._payload_encoder(new_payload),
+            payload=self._payload_encoder(payload),
             ttl=ttl,
         )
 

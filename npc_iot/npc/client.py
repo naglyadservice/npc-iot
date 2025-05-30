@@ -66,7 +66,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         payload: RebootPayload,
         ttl: int | None = 5,
     ) -> ResponseWaiter[AckResponse]:
-        return await self._send_message(
+        return await self.send_message(
             device_id=device_id,
             topic="client/reboot/set",
             qos=1,
@@ -80,7 +80,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         payload: SetStatePayload,
         ttl: int | None = 5,
     ) -> ResponseWaiter[AckResponse]:
-        return await self._send_message(
+        return await self.send_message(
             device_id=device_id,
             topic="client/state/set",
             qos=2,
@@ -94,7 +94,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         payload: GetStatePayload,
         ttl: int | None = 5,
     ) -> ResponseWaiter[GetStateResponse]:
-        return await self._send_message(
+        return await self.send_message(
             device_id=device_id,
             topic="client/state/get",
             qos=1,

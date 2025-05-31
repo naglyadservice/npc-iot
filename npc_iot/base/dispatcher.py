@@ -125,8 +125,8 @@ class BaseDispatcher:
             )
             setattr(self, name, cloned)
 
-    def _get_callback_handlers(self) -> list[(str, MessageHandler)]:
-        handlers: list[(str, MessageHandler)] = []
+    def _get_callback_handlers(self) -> list[tuple[str, MessageHandler]]:
+        handlers: list[tuple[str, MessageHandler]] = []
 
         for name, member in inspect.getmembers(self):
             if isinstance(member, MessageHandler):

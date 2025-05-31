@@ -110,7 +110,7 @@ class BaseClient(Generic[DispatcherType]):
         topic: str,
         qos: Literal[0, 1, 2],
         payload: Mapping[str, Any] | str | bytes | None,
-        ttl: int | None,
+        ttl: int | None = None,
     ) -> ResponseWaiter:
         response_waiter = ResponseWaiter(
             device_id=device_id,
@@ -122,7 +122,7 @@ class BaseClient(Generic[DispatcherType]):
         if isinstance(payload, Mapping):
             payload = {"request_id": response_waiter.request_id, **payload}
 
-        await self._connector.send_message(
+        await self.send_raw_message(
             topic=f"{self._topic_prefix}/{device_id}/{topic}",
             qos=qos,
             payload=self._payload_encoder(payload),
@@ -130,6 +130,20 @@ class BaseClient(Generic[DispatcherType]):
         )
 
         return response_waiter
+
+    async def send_raw_message(
+        self,
+        topic: str,
+        qos: Literal[0, 1, 2],
+        payload: str | bytes,
+        ttl: int | None = None,
+    ) -> None:
+        await self._connector.send_message(
+            topic=topic,
+            qos=qos,
+            payload=payload,
+            ttl=ttl,
+        )
 
     async def _result_callback(self, device_id: str, payload: dict[str, Any], **kwargs) -> None:
         request_id = payload.get("request_id")

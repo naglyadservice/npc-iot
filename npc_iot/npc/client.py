@@ -3,13 +3,7 @@ from typing import Any, Callable, Generic, Type, TypeVar
 
 from ..base.client import BaseClient
 from ..response import ResponseWaiter
-from .types import (
-    AckResponse,
-    GetStatePayload,
-    GetStateResponse,
-    RebootPayload,
-    SetStatePayload,
-)
+from .types import AckResponse, GetStatePayload, GetStateResponse, RebootPayload, SetStatePayload
 
 try:
     import orjson as json  # type: ignore

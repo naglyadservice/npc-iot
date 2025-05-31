@@ -116,11 +116,22 @@ class BaseDispatcher:
         self._callback_kwargs = callback_kwargs or {}
         self._share_group_name = share_group_name
 
-    def _get_callback_handlers(self) -> list[MessageHandler]:
-        handlers: list[MessageHandler] = []
-        for _, member in inspect.getmembers(self):
+        for name, handler in self._get_callback_handlers():
+            cloned = MessageHandler(
+                topic=handler.topic,
+                is_ack=handler.is_ack,
+                is_result=handler.is_result,
+                device_id_parser=handler._device_id_parser,
+            )
+            setattr(self, name, cloned)
+
+    def _get_callback_handlers(self) -> list[(str, MessageHandler)]:
+        handlers: list[(str, MessageHandler)] = []
+
+        for name, member in inspect.getmembers(self):
             if isinstance(member, MessageHandler):
-                handlers.append(member)
+                handlers.append((name, member))
+
         return handlers
 
     @asynccontextmanager
@@ -131,7 +142,7 @@ class BaseDispatcher:
         payload_decoder: Callable[[str | bytes], Any],
     ) -> AsyncIterator[None]:
         async with AsyncExitStack() as exit_stack:
-            for callback_handler in self._get_callback_handlers():
+            for _, callback_handler in self._get_callback_handlers():
                 await exit_stack.enter_async_context(
                     callback_handler.handle_messages(
                         connector,
@@ -145,6 +156,6 @@ class BaseDispatcher:
             yield
 
     def register_callbacks(self, result_callback: CallbackType) -> None:
-        for callback_handler in self._get_callback_handlers():
+        for _, callback_handler in self._get_callback_handlers():
             if callback_handler.is_ack or callback_handler.is_result:
                 callback_handler.register_callback(result_callback)

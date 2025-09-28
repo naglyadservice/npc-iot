@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import secrets
-from typing import Any, Protocol, TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
 from .base.types import BaseResponse
 
@@ -19,7 +19,7 @@ class RequestIdGenerator(Protocol):
     async def __call__(self) -> int: ...
 
 
-class ResponseWaiter[ResponseWaiterType]:
+class ResponseWaiter(Generic[ResponseWaiterType]):
     def __init__(self, device_id: str, request_id: int, ttl: int | None) -> None:
         self.device_id = device_id
         self.request_id = request_id

@@ -74,6 +74,14 @@ class BaseClient(Generic[DispatcherType]):
                     username=username,
                     password=password,
                     clean_start=clean_start,
+                    stamina_kwargs={
+                        "attempts": None,
+                        "timeout": 45.0,
+                        "wait_initial": 0.1,
+                        "wait_max": 5.0,
+                        "wait_jitter": 1.0,
+                        "wait_exp_base": 2.0,
+                    },
                 )
             )
 

@@ -23,6 +23,7 @@ class MqttprotoConnector(BaseConnector):
         transport: str = "tcp",
         websocket_path: str | None = None,
         subscription_maximum_qos: int = 2,
+        clean_start: bool | None = None,
     ) -> None:
         self._client_config = {
             "host_or_path": host,
@@ -33,6 +34,7 @@ class MqttprotoConnector(BaseConnector):
             "client_id": client_id,
             "transport": transport,
             "websocket_path": websocket_path,
+            "clean_start": clean_start,
             "stamina_kwargs": {
                 "attempts": 1,
             },

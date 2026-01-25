@@ -6,7 +6,6 @@ from typing import AsyncIterator, Dict
 from mqttproto import MQTTProtocolError, PropertyType, QoS
 from mqttproto.async_client import AsyncMQTTClient
 
-# Імпорт базового класу (залиш як у тебе було)
 from .base import BaseConnector, CallbackType
 
 logger = logging.getLogger(__name__)
@@ -55,7 +54,6 @@ class MqttprotoConnector(BaseConnector):
         self._manager_task = asyncio.create_task(self._connection_manager_loop())
 
     async def __aexit__(self, exc_type, exc_value, traceback) -> None:
-        """Зупиняє все."""
         self._stop_event.set()
         if self._manager_task:
             self._manager_task.cancel()
@@ -113,7 +111,6 @@ class MqttprotoConnector(BaseConnector):
     async def _start_subscription_reader(self, topic: str, callback: CallbackType):
         async def reader_task():
             try:
-                # Використовуємо контекстний менеджер бібліотеки
                 async with self._current_client.subscribe(
                     topic, maximum_qos=QoS(self._subscription_maximum_qos)
                 ) as subscription:

@@ -1,11 +1,12 @@
 import asyncio
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
-from typing import AsyncIterator
+from typing import AsyncIterator, Dict
 
-from mqttproto import PropertyType, QoS
+from mqttproto import MQTTProtocolError, PropertyType, QoS
 from mqttproto.async_client import AsyncMQTTClient
 
+# Імпорт базового класу (залиш як у тебе було)
 from .base import BaseConnector, CallbackType
 
 logger = logging.getLogger(__name__)
@@ -14,37 +15,124 @@ logger = logging.getLogger(__name__)
 class MqttprotoConnector(BaseConnector):
     def __init__(
         self,
-        mqtt_client: AsyncMQTTClient,
+        host: str,
+        port: int,
+        ssl: bool = False,
+        client_id: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        transport: str = "tcp",
+        websocket_path: str | None = None,
         subscription_maximum_qos: int = 2,
     ) -> None:
-        self._mqtt_client = mqtt_client
-        self._subscription_maximum_qos = subscription_maximum_qos
-        self._exit_stack = None
+        self._client_config = {
+            "host_or_path": host,
+            "port": port,
+            "username": username,
+            "password": password,
+            "ssl": ssl,
+            "client_id": client_id,
+            "transport": transport,
+            "websocket_path": websocket_path,
+            "stamina_kwargs": {
+                "attempts": 1,
+            },
+        }
 
-    async def _run_client(self, start_event: asyncio.Event, stop_event: asyncio.Event) -> None:
-        async with self._mqtt_client:
-            start_event.set()
-            await stop_event.wait()
+        self._subscription_maximum_qos = subscription_maximum_qos
+
+        self._current_client: AsyncMQTTClient | None = None
+        self._connected_event = asyncio.Event()
+        self._manager_task: asyncio.Task | None = None
+        self._stop_event = asyncio.Event()
+
+        self._active_subscriptions: Dict[str, CallbackType] = {}
+
+        self._subscription_tasks: AsyncExitStack | None = None
 
     async def __aenter__(self) -> None:
-        # if context manager is not used in _mqtt_client, then use it
-        if not hasattr(self._mqtt_client, "_exit_stack"):
-            async with AsyncExitStack() as exit_stack:
-                start_event = asyncio.Event()
-                stop_event = asyncio.Event()
-
-                task = asyncio.create_task(self._run_client(start_event, stop_event))
-
-                exit_stack.push_async_callback(asyncio.gather, task)
-                exit_stack.callback(stop_event.set)
-
-                await start_event.wait()
-
-                self._exit_stack = exit_stack.pop_all()
+        self._stop_event.clear()
+        self._manager_task = asyncio.create_task(self._connection_manager_loop())
 
     async def __aexit__(self, exc_type, exc_value, traceback) -> None:
-        if self._exit_stack is not None:
-            await self._exit_stack.__aexit__(None, None, None)
+        """Зупиняє все."""
+        self._stop_event.set()
+        if self._manager_task:
+            self._manager_task.cancel()
+            await self._manager_task
+
+    async def _connection_manager_loop(self) -> None:
+        logger.info("Connecting to MQTT broker...")
+        while not self._stop_event.is_set():
+            try:
+                task = asyncio.create_task(self._create_connection())
+                await task
+
+            except* (
+                OSError,
+                ConnectionRefusedError,
+                asyncio.TimeoutError,
+                asyncio.CancelledError,
+            ) as exc_group:
+                # asyncio.CancelledError needs here becouse library may raise it on disconnect
+                if not self._stop_event.is_set():
+                    exc = exc_group.exceptions[0]
+                    logging.warning(
+                        f"MQTT connection failed: {exc.__class__.__name__}: {exc}. Reconnecting in 1s..."
+                    )
+                    await asyncio.sleep(1)
+
+    async def _create_connection(self):
+        self._current_client = AsyncMQTTClient(**self._client_config)
+        self._subscription_tasks = AsyncExitStack()
+
+        try:
+            await asyncio.wait_for(self._current_client.__aenter__(), timeout=5.0)
+
+            logger.info("MQTT Connected!")
+            self._connected_event.set()
+            try:
+                await self.resubscribe_all()
+                await self._stop_event.wait()
+            finally:
+                logger.info("MQTT Disconnected.")
+                self._connected_event.clear()
+
+        finally:
+            with suppress(Exception):
+                await self._current_client.__aexit__(None, None, None)
+
+            self._current_client = None
+            await self._subscription_tasks.aclose()
+            self._subscription_tasks = None
+
+    async def resubscribe_all(self):
+        for topic, callback in self._active_subscriptions.items():
+            await self._start_subscription_reader(topic, callback)
+
+    async def _start_subscription_reader(self, topic: str, callback: CallbackType):
+        async def reader_task():
+            try:
+                # Використовуємо контекстний менеджер бібліотеки
+                async with self._current_client.subscribe(
+                    topic, maximum_qos=QoS(self._subscription_maximum_qos)
+                ) as subscription:
+                    logger.info(f"Resubscribed to: {topic}")
+                    async for message in subscription:
+                        asyncio.create_task(callback(topic=message.topic, payload=message.payload))
+
+            except asyncio.CancelledError:
+                pass
+
+            except Exception as e:
+                if isinstance(e, MQTTProtocolError) and str(e).startswith(
+                    "cannot perform this operation in the DISCONNECTED state"
+                ):
+                    return
+
+                logger.warning(f"Subscription error for {topic}: {e.__class__.__name__}: {e}")
+
+        await self._subscription_tasks.enter_async_context(_BackgroundTaskContext(reader_task))
 
     async def send_message(
         self,
@@ -53,28 +141,42 @@ class MqttprotoConnector(BaseConnector):
         payload: bytes | str,
         ttl: int | None = None,
     ) -> None:
+        if not self._connected_event.is_set():
+            raise RuntimeError("MQTT client is not connected")
+
         properties = {}
         if ttl is not None:
             properties[PropertyType.MESSAGE_EXPIRY_INTERVAL] = ttl
 
-        await self._mqtt_client.publish(topic, payload, qos=QoS(qos), properties=properties)
-
-    async def _subscribe(self, topic: str, callback: CallbackType) -> None:
-        async with self._mqtt_client.subscribe(
-            topic,
-            maximum_qos=QoS(self._subscription_maximum_qos),
-        ) as subscription:
-            with suppress(asyncio.CancelledError):
-                async for message in subscription:
-                    asyncio.create_task(callback(topic=message.topic, payload=message.payload))
+        await self._current_client.publish(topic, payload, qos=QoS(qos), properties=properties)
 
     @asynccontextmanager
     async def subscribe(self, topic: str, callback: CallbackType) -> AsyncIterator[None]:
-        logger.info(f"Subscribing to topic: {topic}")
-        task = asyncio.create_task(self._subscribe(topic, callback))
+        logger.info(f"Registering subscription: {topic}")
+
+        self._active_subscriptions[topic] = callback
+
+        if self._connected_event.is_set():
+            await self._start_subscription_reader(topic, callback)
+
         try:
             yield
         finally:
-            task.cancel()
+            logger.info(f"Unregistering subscription: {topic}")
+            self._active_subscriptions.pop(topic, None)
+
+
+class _BackgroundTaskContext:
+    def __init__(self, coro_func):
+        self.coro_func = coro_func
+        self.task = None
+
+    async def __aenter__(self):
+        self.task = asyncio.create_task(self.coro_func())
+        return self.task
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.task:
+            self.task.cancel()
             with suppress(asyncio.CancelledError):
-                await task
+                await self.task

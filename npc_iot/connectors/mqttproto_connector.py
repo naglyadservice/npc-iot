@@ -88,6 +88,11 @@ class MqttprotoConnector(BaseConnector):
                 )
                 print_exc()
 
+            except* BaseException:
+                logger.exception("Critical error in MQTT connection manager, stopping...")
+                print_exc()
+                raise
+
     async def _create_connection(self):
         self._current_client = AsyncMQTTClient(**self._client_config)
         self._subscription_tasks = AsyncExitStack()

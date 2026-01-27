@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from traceback import print_exc
 from typing import AsyncIterator, Dict
 
 from mqttproto import MQTTProtocolError, PropertyType, QoS
@@ -81,6 +82,11 @@ class MqttprotoConnector(BaseConnector):
                         f"MQTT connection failed: {exc.__class__.__name__}: {exc}. Reconnecting in 1s..."
                     )
                     await asyncio.sleep(1)
+            except* Exception as e:
+                logger.exception(
+                    f"Unexpected error in MQTT connection manager: {e.__class__.__name__}: {e}"
+                )
+                print_exc()
 
     async def _create_connection(self):
         self._current_client = AsyncMQTTClient(**self._client_config)

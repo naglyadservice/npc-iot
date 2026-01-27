@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
-from traceback import print_exc
 from typing import AsyncIterator, Dict
 
 from mqttproto import MQTTProtocolError, PropertyType, QoS
@@ -82,16 +81,13 @@ class MqttprotoConnector(BaseConnector):
                         f"MQTT connection failed: {exc.__class__.__name__}: {exc}. Reconnecting in 1s..."
                     )
                     await asyncio.sleep(1)
-            except* Exception as e:
-                logger.exception(
-                    f"Unexpected error in MQTT connection manager: {e.__class__.__name__}: {e}"
-                )
-                print_exc()
 
-            except* BaseException:
-                logger.exception("Critical error in MQTT connection manager, stopping...")
-                print_exc()
-                raise
+            except* Exception as e:
+                if not self._stop_event.is_set():
+                    logger.exception(
+                        f"Unexpected error in MQTT connection manager: {e.__class__.__name__}: {e}"
+                    )
+                    await asyncio.sleep(1)
 
     async def _create_connection(self):
         self._current_client = AsyncMQTTClient(**self._client_config)
@@ -118,7 +114,9 @@ class MqttprotoConnector(BaseConnector):
             self._subscription_tasks = None
 
     async def resubscribe_all(self):
-        for topic, callback in self._active_subscriptions.items():
+        subscriptions = list(self._active_subscriptions.items())
+        for topic, callback in subscriptions:
+            logger.info(f"Resubscribing to: {topic}")
             await self._start_subscription_reader(topic, callback)
 
     async def _start_subscription_reader(self, topic: str, callback: CallbackType):

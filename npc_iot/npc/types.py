@@ -33,6 +33,14 @@ class GetStatePayload(TypedDict):
     humidity: NotRequired[list[int]]
 
 
+class AddPhonesMultyPayload(TypedDict):
+    phones: list[str]
+
+
+class DelPhonesPayload(TypedDict):
+    phones: list[str]
+
+
 class PinStateInfo(TypedDict):
     id: int
     state: bool

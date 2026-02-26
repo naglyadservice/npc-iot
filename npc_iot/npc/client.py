@@ -3,7 +3,15 @@ from typing import Any, Callable, Generic, Type, TypeVar
 
 from ..base.client import BaseClient
 from ..response import ResponseWaiter
-from .types import AckResponse, GetStatePayload, GetStateResponse, RebootPayload, SetStatePayload
+from .types import (
+    AckResponse,
+    AddPhonesMultyPayload,
+    DelPhonesPayload,
+    GetStatePayload,
+    GetStateResponse,
+    RebootPayload,
+    SetStatePayload,
+)
 
 try:
     import orjson as json  # type: ignore
@@ -91,6 +99,34 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         return await self.send_message(
             device_id=device_id,
             topic="client/state/get",
+            qos=1,
+            payload=payload,
+            ttl=ttl,
+        )
+
+    async def add_phones(
+        self,
+        device_id: str,
+        payload: AddPhonesMultyPayload,
+        ttl: int | None = 5,
+    ) -> ResponseWaiter[AckResponse]:
+        return await self.send_message(
+            device_id=device_id,
+            topic="client/phone/add_multy",
+            qos=1,
+            payload=payload,
+            ttl=ttl,
+        )
+
+    async def del_phones(
+        self,
+        device_id: str,
+        payload: DelPhonesPayload,
+        ttl: int | None = 5,
+    ) -> ResponseWaiter[AckResponse]:
+        return await self.send_message(
+            device_id=device_id,
+            topic="client/phone/del",
             qos=1,
             payload=payload,
             ttl=ttl,

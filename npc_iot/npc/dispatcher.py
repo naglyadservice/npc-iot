@@ -15,3 +15,5 @@ class NpcDispatcher(BaseDispatcher):
     state_ack = MessageHandler(topic="/+/server/state/ack", is_ack=True)
     state = MessageHandler(topic="/+/server/state", is_result=True)
     state_info = MessageHandler(topic="/+/server/state/info")
+    phone_add_multy_ack = MessageHandler("/+/phone/add_multy/ack", is_ack=True)
+    phone_del_ack = MessageHandler("/+/phone/del/ack", is_ack=True)

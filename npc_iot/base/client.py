@@ -109,10 +109,14 @@ class BaseClient(Generic[DispatcherType]):
         qos: Literal[0, 1, 2],
         payload: Mapping[str, Any] | str | bytes | None,
         ttl: int | None = None,
+        request_id: int | None = None,
     ) -> ResponseWaiter:
+        if request_id is None:
+            request_id = await self._request_id_generator()
+
         response_waiter = ResponseWaiter(
             device_id=device_id,
-            request_id=await self._request_id_generator(),
+            request_id=request_id,
             ttl=ttl,
         )
         self._response_waiters[response_waiter.request_id] = response_waiter

@@ -67,6 +67,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         device_id: str,
         payload: RebootPayload,
         ttl: int | None = 5,
+        request_id: int | None = None,
     ) -> ResponseWaiter[AckResponse]:
         return await self.send_message(
             device_id=device_id,
@@ -74,6 +75,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
             qos=1,
             payload=payload,
             ttl=ttl,
+            request_id=request_id,
         )
 
     async def set_state(
@@ -81,6 +83,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         device_id: str,
         payload: SetStatePayload,
         ttl: int | None = 5,
+        request_id: int | None = None,
     ) -> ResponseWaiter[AckResponse]:
         return await self.send_message(
             device_id=device_id,
@@ -88,6 +91,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
             qos=2,
             payload=payload,
             ttl=ttl,
+            request_id=request_id,
         )
 
     async def get_state(
@@ -95,6 +99,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         device_id: str,
         payload: GetStatePayload,
         ttl: int | None = 5,
+        request_id: int | None = None,
     ) -> ResponseWaiter[GetStateResponse]:
         return await self.send_message(
             device_id=device_id,
@@ -102,6 +107,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
             qos=1,
             payload=payload,
             ttl=ttl,
+            request_id=request_id,
         )
 
     async def add_phones(
@@ -109,6 +115,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         device_id: str,
         payload: AddPhonesMultyPayload,
         ttl: int | None = 5,
+        request_id: int | None = None,
     ) -> ResponseWaiter[AckResponse]:
         return await self.send_message(
             device_id=device_id,
@@ -116,6 +123,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
             qos=1,
             payload=payload,
             ttl=ttl,
+            request_id=request_id,
         )
 
     async def del_phones(
@@ -123,6 +131,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         device_id: str,
         payload: DelPhonesPayload,
         ttl: int | None = 5,
+        request_id: int | None = None,
     ) -> ResponseWaiter[AckResponse]:
         return await self.send_message(
             device_id=device_id,
@@ -130,4 +139,5 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
             qos=1,
             payload=payload,
             ttl=ttl,
+            request_id=request_id,
         )

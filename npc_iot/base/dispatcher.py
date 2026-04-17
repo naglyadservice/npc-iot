@@ -160,7 +160,7 @@ class MessageHandler(Generic[ContextType]):
 class BaseDispatcher(Generic[ContextType]):
     def __init__(
         self,
-        context: ContextType,
+        context: ContextType = None,
         share_group_name: str | None = None,
     ) -> None:
         self.context = context

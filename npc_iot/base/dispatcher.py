@@ -3,8 +3,7 @@ import inspect
 import logging
 import re
 from contextlib import AsyncExitStack, asynccontextmanager
-from functools import partial
-from typing import Any, AsyncIterator, Callable, Concatenate, Coroutine, Dict, ParamSpec, Protocol
+from typing import Any, AsyncIterator, Callable, Coroutine, Generic, ParamSpec, TypeVar
 
 from ..connectors.base import BaseConnector
 
@@ -13,36 +12,53 @@ log = logging.getLogger(__name__)
 
 P = ParamSpec("P")
 
-CallbackType = Callable[Concatenate[str, Dict[str, Any], P], Coroutine]
+CallbackType = Callable[..., Coroutine]
+
+ContextType = TypeVar("ContextType")
 
 
-class DeviceIdParser(Protocol):
-    def __call__(self, topic_prefix: str, topic: str) -> str: ...
-
-
-def _parse_device_id(topic_prefix: str, topic: str) -> str:
-    m = re.search(rf"{topic_prefix}/(\w+)/", topic)
-    if m is None:
-        raise ValueError(f"Invalid topic: {topic}")
-
-    return m.group(1)
-
-
-class MessageHandler:
+class MessageHandler(Generic[ContextType]):
     def __init__(
         self,
-        topic: str,
+        topic_template: str,
         is_ack: bool = False,
         is_result: bool = False,
-        device_id_parser: DeviceIdParser = _parse_device_id,
     ) -> None:
-        self.topic = topic
+        self.topic_template = topic_template
         self.is_ack = is_ack
         self.is_result = is_result
         self._callbacks: list[CallbackType] = []
-        self._device_id_parser = device_id_parser
+        self.mqtt_sub_topic = re.sub(r"\{[^}]+\}", "+", self.topic_template)
+        self.path_vars = set(re.findall(r"\{([^}]+)\}", self.topic_template))
+        self.provided_args = self.path_vars | {"payload", "ctx"}
 
     def register_callback(self, callback: CallbackType) -> None:
+        sig = inspect.signature(callback)
+        for param_name, param in sig.parameters.items():
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                continue
+            is_required = param.default is inspect.Parameter.empty
+
+            if is_required and param_name not in self.provided_args:
+                raise TypeError(
+                    f"Failed to register callback '{callback.__name__}'.\n"
+                    f"Signature mismatch: The callback expects a required positional argument '{param_name}', "
+                    f"but it cannot be resolved from the current context.\n"
+                    f"Available injectable arguments for topic template '{self.topic_template}' are: {sorted(list(self.provided_args))}.\n"
+                    f"Hint: If '{param_name}' is intended to be optional, provide a default value (e.g., '{param_name}=None')."
+                )
+
+            if param_name in self.path_vars and param.annotation not in (
+                inspect.Parameter.empty,
+                str,
+            ):
+                raise TypeError(
+                    f"Failed to register callback '{callback.__name__}'.\n"
+                    f"Type mismatch: Path parameter '{param_name}' is extracted from the MQTT topic and must be of type 'str'.\n"
+                    f"Found annotation: '{param.annotation.__name__ if hasattr(param.annotation, '__name__') else param.annotation}'.\n"
+                    f"Hint: Change the type hint to '{param_name}: str'."
+                )
+
         self._callbacks.append(callback)
 
     def remove_callback(self, callback: CallbackType) -> None:
@@ -54,31 +70,22 @@ class MessageHandler:
         raise ValueError("Callback not found")
 
     async def _process_callbacks(
-        self, device_id: str, decoded_payload: Any, **callback_kwargs: dict[str, Any]
+        self, path_params: dict[str, str], decoded_payload: Any, ctx: ContextType
     ) -> None:
-        await asyncio.gather(
-            *[
-                callback(device_id, decoded_payload, **callback_kwargs)
-                for callback in self._callbacks
-            ]
-        )
-
-    async def _handle_message(
-        self,
-        topic: str,
-        payload: str | bytes,
-        payload_decoder: Callable[[str | bytes], Any],
-        topic_prefix: str,
-        callback_kwargs: dict[str, Any],
-    ) -> None:
-        try:
-            decoded_payload = payload_decoder(payload)
-        except Exception as e:
-            log.error(f"Failed to decode payload, topic: {topic}, payload: {payload}", exc_info=e)
-            return
-
-        device_id = self._device_id_parser(topic_prefix, topic)
-        asyncio.create_task(self._process_callbacks(device_id, decoded_payload, **callback_kwargs))
+        for callback in self._callbacks:
+            sig = inspect.signature(callback)
+            final_kwargs = {
+                **path_params,
+                "payload": decoded_payload,
+                "ctx": ctx,
+            }
+            safe_kwargs = {
+                k: v
+                for k, v in final_kwargs.items()
+                if k in sig.parameters
+                or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+            }
+            asyncio.create_task(callback(**safe_kwargs))
 
     @asynccontextmanager
     async def handle_messages(
@@ -86,42 +93,60 @@ class MessageHandler:
         connector: BaseConnector,
         topic_prefix: str,
         payload_decoder: Callable[[str | bytes], Any],
-        callback_kwargs: dict[str, Any] | None = None,
+        ctx: ContextType,
         share_group_name: str | None = None,
     ) -> AsyncIterator[None]:
-        callback = partial(
-            self._handle_message,
-            payload_decoder=payload_decoder,
-            topic_prefix=topic_prefix,
-            callback_kwargs=callback_kwargs or {},
-        )
-        topic = f"{topic_prefix}{self.topic}"
+        safe_prefix = re.escape(topic_prefix)
+        regex_pattern = re.sub(r"\{([^}]+)\}", r"(?P<\1>[^/]+)", self.topic_template)
+        topic_regex = re.compile(f"^{safe_prefix}{regex_pattern}$")
 
+        async def _wrapped_handle_message(topic: str, payload: str | bytes):
+            try:
+                decoded_payload = payload_decoder(payload)
+            except Exception as e:
+                log.error(f"Failed to decode payload, topic: {topic}", exc_info=e)
+                return
+
+            match = topic_regex.match(topic)
+            if not match:
+                log.error(f"Topic {topic} did not match regex {topic_regex.pattern}")
+                return
+
+            path_params = match.groupdict()
+
+            asyncio.create_task(
+                self._process_callbacks(
+                    decoded_payload=decoded_payload,
+                    path_params=path_params,
+                    ctx=ctx,
+                )
+            )
+
+        subscribe_topic = f"{topic_prefix}{self.mqtt_sub_topic}"
         if share_group_name and not (self.is_ack or self.is_result):
-            topic = f"$share/{share_group_name}/{topic}"
+            subscribe_topic = f"$share/{share_group_name}/{subscribe_topic}"
 
-        async with connector.subscribe(topic, callback=callback):
+        async with connector.subscribe(subscribe_topic, callback=_wrapped_handle_message):
             yield
 
     def __repr__(self) -> str:
-        return (
-            f"<MessageHandler topic={self.topic} is_ack={self.is_ack} is_result={self.is_result}>"
-        )
+        return f"<MessageHandler topic={self.topic_template} is_ack={self.is_ack} is_result={self.is_result}>"
 
 
-class BaseDispatcher:
+class BaseDispatcher(Generic[ContextType]):
     def __init__(
-        self, callback_kwargs: dict[str, Any] | None = None, share_group_name: str | None = None
+        self,
+        context: ContextType,
+        share_group_name: str | None = None,
     ) -> None:
-        self._callback_kwargs = callback_kwargs or {}
+        self.context = context
         self._share_group_name = share_group_name
 
         for name, handler in self._get_callback_handlers():
             cloned = MessageHandler(
-                topic=handler.topic,
+                topic_template=handler.topic_template,
                 is_ack=handler.is_ack,
                 is_result=handler.is_result,
-                device_id_parser=handler._device_id_parser,
             )
             setattr(self, name, cloned)
 
@@ -148,7 +173,7 @@ class BaseDispatcher:
                         connector,
                         topic_prefix=topic_prefix,
                         payload_decoder=payload_decoder,
-                        callback_kwargs=self._callback_kwargs,
+                        ctx=self.context,
                         share_group_name=self._share_group_name,
                     )
                 )

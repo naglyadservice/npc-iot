@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from typing import AsyncIterator, Dict
 
@@ -24,6 +25,12 @@ class MqttprotoConnector(BaseConnector):
         websocket_path: str | None = None,
         subscription_maximum_qos: int = 2,
         clean_start: bool | None = None,
+        health_check_min_interval: float = 1.0,
+        health_check_max_interval: float = 30.0,
+        health_check_backoff_factor: float = 1.5,
+        health_check_timeout: float = 5.0,
+        health_check_topic_prefix: str = "$client/healthcheck/",
+        health_check_topic_suffix: str | None = None,
     ) -> None:
         self._client_config = {
             "host_or_path": host,
@@ -51,6 +58,19 @@ class MqttprotoConnector(BaseConnector):
 
         self._subscription_tasks: AsyncExitStack | None = None
 
+        self._health_check_min_interval = health_check_min_interval
+        self._health_check_max_interval = health_check_max_interval
+        self._health_check_backoff_factor = health_check_backoff_factor
+        self._health_check_timeout = health_check_timeout
+        if health_check_topic_suffix is None:
+            health_check_topic_suffix = uuid.uuid4().hex
+
+        self._health_probe_topic = (
+            f"{health_check_topic_prefix.rstrip('/')}/{health_check_topic_suffix}"
+        )
+        self._health_probe_event = asyncio.Event()
+        self._force_reconnect_event = asyncio.Event()
+
     async def __aenter__(self) -> None:
         self._stop_event.clear()
         self._manager_task = asyncio.create_task(self._connection_manager_loop())
@@ -71,6 +91,7 @@ class MqttprotoConnector(BaseConnector):
             except* (
                 OSError,
                 ConnectionRefusedError,
+                ConnectionError,
                 asyncio.TimeoutError,
                 asyncio.CancelledError,
             ) as exc_group:
@@ -92,15 +113,41 @@ class MqttprotoConnector(BaseConnector):
     async def _create_connection(self):
         self._current_client = AsyncMQTTClient(**self._client_config)
         self._subscription_tasks = AsyncExitStack()
+        self._force_reconnect_event.clear()
 
         try:
             await asyncio.wait_for(self._current_client.__aenter__(), timeout=5.0)
 
             logger.info("MQTT Connected!")
+            await self._start_health_probe_subscription()
+            if not await self._verify_subscriptions_work():
+                logger.warning(
+                    "MQTT subscriptions are not functional after connect, reconnecting..."
+                )
+                raise ConnectionError("Broker subscriptions not functional")
+
             self._connected_event.set()
             try:
                 await self.resubscribe_all()
-                await self._stop_event.wait()
+                health_task = asyncio.create_task(self._health_check_loop())
+
+                try:
+                    stop_task = asyncio.create_task(self._stop_event.wait())
+                    reconnect_task = asyncio.create_task(self._force_reconnect_event.wait())
+                    done, pending = await asyncio.wait(
+                        [stop_task, reconnect_task],
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for t in pending:
+                        t.cancel()
+
+                    if self._force_reconnect_event.is_set() and not self._stop_event.is_set():
+                        raise ConnectionError("Health check failed, forcing reconnect")
+                finally:
+                    health_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await health_task
+
             finally:
                 logger.info("MQTT Disconnected.")
                 self._connected_event.clear()
@@ -112,6 +159,69 @@ class MqttprotoConnector(BaseConnector):
             self._current_client = None
             await self._subscription_tasks.aclose()
             self._subscription_tasks = None
+
+    async def _start_health_probe_subscription(self):
+        """Підписка на наш власний probe-топік."""
+
+        async def probe_reader():
+            try:
+                async with self._current_client.subscribe(
+                    self._health_probe_topic,
+                    maximum_qos=QoS(1),
+                ) as subscription:
+                    async for _ in subscription:
+                        self._health_probe_event.set()
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning(f"Health probe subscription error: {e}")
+
+        await self._subscription_tasks.enter_async_context(_BackgroundTaskContext(probe_reader))
+
+    async def _verify_subscriptions_work(self) -> bool:
+        """Перевіряє, що broker роутить повідомлення. Якщо ні — з'єднання зламане."""
+        # Даємо час підписці "прорости" на стороні брокера
+        await asyncio.sleep(0.1)
+
+        self._health_probe_event.clear()
+        try:
+            await self._current_client.publish(
+                self._health_probe_topic,
+                b"ping",
+                qos=QoS(1),
+            )
+            await asyncio.wait_for(
+                self._health_probe_event.wait(),
+                timeout=self._health_check_timeout,
+            )
+            return True
+        except asyncio.TimeoutError:
+            return False
+        except Exception as e:
+            logger.warning(f"Health probe failed: {e}")
+            return False
+
+    async def _health_check_loop(self):
+        interval = self._health_check_min_interval
+
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.sleep(interval)
+
+                if not await self._verify_subscriptions_work():
+                    logger.warning("Health check failed, triggering reconnect")
+                    self._force_reconnect_event.set()
+                    return
+
+                # Успіх — розтягуємо інтервал до максимуму
+                interval = min(
+                    interval * self._health_check_backoff_factor,
+                    self._health_check_max_interval,
+                )
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.exception(f"Health check loop error: {e}")
 
     async def resubscribe_all(self):
         subscriptions = list(self._active_subscriptions.items())

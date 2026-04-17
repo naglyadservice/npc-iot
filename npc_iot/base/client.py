@@ -14,8 +14,8 @@ except ImportError:
 
 from ..connectors.base import BaseConnector
 from ..connectors.mqttproto_connector import MqttprotoConnector
-from ..exception import DeviceResponceError
-from ..response import RequestIdGenerator, ResponseWaiter, _defult_request_id_generator
+from ..exception import DeviceResponseError
+from ..response import RequestIdGenerator, ResponseWaiter, _default_request_id_generator
 from .dispatcher import BaseDispatcher
 
 log = logging.getLogger(__name__)
@@ -40,12 +40,12 @@ class BaseClient(Generic[DispatcherType]):
         topic_prefix: str = "",
         payload_encoder: Callable[[Any], str | bytes] = json.dumps,
         payload_decoder: Callable[[str | bytes], Any] = json.loads,
-        request_id_generator: RequestIdGenerator = _defult_request_id_generator,
+        request_id_generator: RequestIdGenerator = _default_request_id_generator,
         dispatcher_class: Type[DispatcherType] = BaseDispatcher,
         dispatcher_kwargs: dict[str, Any] | None = None,
     ) -> None:
-        if connector is not None and any(
-            (host, port, ssl, client_id, username, password, clean_start)
+        if connector is not None and not all(
+            x is None for x in (host, port, ssl, client_id, username, password, clean_start)
         ):
             raise ValueError("connector and other connection parameters cannot be passed together")
 
@@ -102,10 +102,13 @@ class BaseClient(Generic[DispatcherType]):
     async def __aexit__(self, exc_type, exc_value, traceback) -> None:
         await self._exit_stack.__aexit__(None, None, None)
 
+    def _remove_response_waiter(self, request_id: int) -> None:
+        self._response_waiters.pop(request_id, None)
+
     async def send_message(
         self,
-        device_id: str,
-        topic: str,
+        topic_template: str,
+        path_params: dict[str, str],
         qos: Literal[0, 1, 2],
         payload: Mapping[str, Any] | str | bytes | None,
         ttl: int | None = None,
@@ -115,17 +118,21 @@ class BaseClient(Generic[DispatcherType]):
             request_id = await self._request_id_generator()
 
         response_waiter = ResponseWaiter(
-            device_id=device_id,
+            device_id=path_params.get("device_id", "unknown"),
             request_id=request_id,
             ttl=ttl,
+            cancel_callback=self._remove_response_waiter,
         )
         self._response_waiters[response_waiter.request_id] = response_waiter
 
         if isinstance(payload, Mapping):
             payload = {"request_id": response_waiter.request_id, **payload}
 
+        formatted_topic = topic_template.format(**path_params)
+        full_topic = f"{self._topic_prefix}{formatted_topic}"
+
         await self.send_raw_message(
-            topic=f"{self._topic_prefix}/{device_id}/{topic}",
+            topic=full_topic,
             qos=qos,
             payload=self._payload_encoder(payload),
             ttl=ttl,
@@ -147,7 +154,7 @@ class BaseClient(Generic[DispatcherType]):
             ttl=ttl,
         )
 
-    async def _result_callback(self, device_id: str, payload: dict[str, Any], **kwargs) -> None:
+    async def _result_callback(self, payload: dict[str, Any]) -> None:
         request_id = payload.get("request_id")
         if request_id is None:
             return
@@ -155,8 +162,10 @@ class BaseClient(Generic[DispatcherType]):
         if request_id not in self._response_waiters:
             return
 
+        waiter = self._response_waiters.pop(request_id)
+
         if payload.get("code", 0) != 0:
-            self._response_waiters[request_id]._set_exception(DeviceResponceError(payload["code"]))
+            waiter._set_exception(DeviceResponseError(payload["code"]))
             return
 
-        self._response_waiters[request_id]._set_result(payload)
+        waiter._set_result(payload)

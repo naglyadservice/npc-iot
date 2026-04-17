@@ -5,7 +5,7 @@ from ..base.client import BaseClient
 from ..response import ResponseWaiter
 from .types import (
     AckResponse,
-    AddPhonesMultyPayload,
+    AddPhonesMultiPayload,
     DelPhonesPayload,
     GetStatePayload,
     GetStateResponse,
@@ -19,7 +19,7 @@ except ImportError:
     import json
 
 from ..connectors.base import BaseConnector
-from ..response import RequestIdGenerator, _defult_request_id_generator
+from ..response import RequestIdGenerator, _default_request_id_generator
 from .dispatcher import NpcDispatcher
 
 log = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         topic_prefix: str = "v2",
         payload_encoder: Callable[[Any], str | bytes] = json.dumps,
         payload_decoder: Callable[[str | bytes], Any] = json.loads,
-        request_id_generator: RequestIdGenerator = _defult_request_id_generator,
+        request_id_generator: RequestIdGenerator = _default_request_id_generator,
         dispatcher_class: Type[DispatcherType] = NpcDispatcher,
         dispatcher_kwargs: dict[str, Any] | None = None,
     ):
@@ -70,8 +70,8 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         request_id: int | None = None,
     ) -> ResponseWaiter[AckResponse]:
         return await self.send_message(
-            device_id=device_id,
-            topic="client/reboot/set",
+            topic_template="/{device_id}/client/reboot/set",
+            path_params={"device_id": device_id},
             qos=1,
             payload=payload,
             ttl=ttl,
@@ -86,8 +86,8 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         request_id: int | None = None,
     ) -> ResponseWaiter[AckResponse]:
         return await self.send_message(
-            device_id=device_id,
-            topic="client/state/set",
+            topic_template="/{device_id}/client/state/set",
+            path_params={"device_id": device_id},
             qos=2,
             payload=payload,
             ttl=ttl,
@@ -102,8 +102,8 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         request_id: int | None = None,
     ) -> ResponseWaiter[GetStateResponse]:
         return await self.send_message(
-            device_id=device_id,
-            topic="client/state/get",
+            topic_template="/{device_id}/client/state/get",
+            path_params={"device_id": device_id},
             qos=1,
             payload=payload,
             ttl=ttl,
@@ -113,13 +113,13 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
     async def add_phones(
         self,
         device_id: str,
-        payload: AddPhonesMultyPayload,
+        payload: AddPhonesMultiPayload,
         ttl: int | None = 5,
         request_id: int | None = None,
     ) -> ResponseWaiter[AckResponse]:
         return await self.send_message(
-            device_id=device_id,
-            topic="client/phone/add_multy",
+            topic_template="/{device_id}/client/phone/add_multi",
+            path_params={"device_id": device_id},
             qos=1,
             payload=payload,
             ttl=ttl,
@@ -134,8 +134,8 @@ class NpcClient(Generic[DispatcherType], BaseClient[DispatcherType]):
         request_id: int | None = None,
     ) -> ResponseWaiter[AckResponse]:
         return await self.send_message(
-            device_id=device_id,
-            topic="client/phone/del",
+            topic_template="/{device_id}/client/phone/del",
+            path_params={"device_id": device_id},
             qos=1,
             payload=payload,
             ttl=ttl,

@@ -33,7 +33,7 @@ class GetStatePayload(TypedDict):
     humidity: NotRequired[list[int]]
 
 
-class AddPhonesMultyPayload(TypedDict):
+class AddPhonesMultiPayload(TypedDict):
     phones: list[str]
 
 

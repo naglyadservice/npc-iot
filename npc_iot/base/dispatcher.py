@@ -3,6 +3,7 @@ import inspect
 import logging
 import re
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Coroutine, Generic, ParamSpec, TypeVar
 
 from ..connectors.base import BaseConnector
@@ -17,6 +18,14 @@ CallbackType = Callable[..., Coroutine]
 ContextType = TypeVar("ContextType")
 
 
+@dataclass(slots=True)
+class CallbackData:
+    func: CallbackType
+    signature: inspect.Signature
+    accepts_kwargs: bool
+    expected_keys: set[str]
+
+
 class MessageHandler(Generic[ContextType]):
     def __init__(
         self,
@@ -27,16 +36,23 @@ class MessageHandler(Generic[ContextType]):
         self.topic_template = topic_template
         self.is_ack = is_ack
         self.is_result = is_result
-        self._callbacks: list[CallbackType] = []
+        self._callbacks: list[CallbackData] = []
         self.mqtt_sub_topic = re.sub(r"\{[^}]+\}", "+", self.topic_template)
         self.path_vars = set(re.findall(r"\{([^}]+)\}", self.topic_template))
         self.provided_args = self.path_vars | {"payload", "ctx"}
+        self._background_tasks: set[asyncio.Task] = set()
 
     def register_callback(self, callback: CallbackType) -> None:
         sig = inspect.signature(callback)
+        accepts_kwargs = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        expected_keys = set(sig.parameters.keys())
+
         for param_name, param in sig.parameters.items():
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 continue
+
             is_required = param.default is inspect.Parameter.empty
 
             if is_required and param_name not in self.provided_args:
@@ -59,11 +75,18 @@ class MessageHandler(Generic[ContextType]):
                     f"Hint: Change the type hint to '{param_name}: str'."
                 )
 
-        self._callbacks.append(callback)
+        self._callbacks.append(
+            CallbackData(
+                func=callback,
+                signature=sig,
+                accepts_kwargs=accepts_kwargs,
+                expected_keys=expected_keys,
+            )
+        )
 
     def remove_callback(self, callback: CallbackType) -> None:
         for i, f in enumerate(self._callbacks):
-            if f is callback:
+            if f.func is callback:
                 del self._callbacks[i]
                 return
 
@@ -73,19 +96,18 @@ class MessageHandler(Generic[ContextType]):
         self, path_params: dict[str, str], decoded_payload: Any, ctx: ContextType
     ) -> None:
         for callback in self._callbacks:
-            sig = inspect.signature(callback)
-            final_kwargs = {
-                **path_params,
-                "payload": decoded_payload,
-                "ctx": ctx,
-            }
-            safe_kwargs = {
-                k: v
-                for k, v in final_kwargs.items()
-                if k in sig.parameters
-                or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
-            }
-            asyncio.create_task(callback(**safe_kwargs))
+            final_kwargs = {**path_params, "payload": decoded_payload, "ctx": ctx}
+
+            if callback.accepts_kwargs:
+                safe_kwargs = final_kwargs
+            else:
+                safe_kwargs = {
+                    k: v for k, v in final_kwargs.items() if k in callback.expected_keys
+                }
+
+            task = asyncio.create_task(callback.func(**safe_kwargs))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
     @asynccontextmanager
     async def handle_messages(
@@ -114,13 +136,15 @@ class MessageHandler(Generic[ContextType]):
 
             path_params = match.groupdict()
 
-            asyncio.create_task(
+            task = asyncio.create_task(
                 self._process_callbacks(
                     decoded_payload=decoded_payload,
                     path_params=path_params,
                     ctx=ctx,
                 )
             )
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
         subscribe_topic = f"{topic_prefix}{self.mqtt_sub_topic}"
         if share_group_name and not (self.is_ack or self.is_result):

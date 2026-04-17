@@ -70,6 +70,7 @@ class MqttprotoConnector(BaseConnector):
         )
         self._health_probe_event = asyncio.Event()
         self._force_reconnect_event = asyncio.Event()
+        self._background_tasks = set()
 
     async def __aenter__(self) -> None:
         self._stop_event.clear()
@@ -85,8 +86,7 @@ class MqttprotoConnector(BaseConnector):
         logger.info("Connecting to MQTT broker...")
         while not self._stop_event.is_set():
             try:
-                task = asyncio.create_task(self._create_connection())
-                await task
+                await self._create_connection()
 
             except* (
                 OSError,
@@ -95,7 +95,7 @@ class MqttprotoConnector(BaseConnector):
                 asyncio.TimeoutError,
                 asyncio.CancelledError,
             ) as exc_group:
-                # asyncio.CancelledError needs here becouse library may raise it on disconnect
+                # asyncio.CancelledError needs here Because library may raise it on disconnect
                 if not self._stop_event.is_set():
                     exc = exc_group.exceptions[0]
                     logging.warning(
@@ -237,7 +237,11 @@ class MqttprotoConnector(BaseConnector):
                 ) as subscription:
                     logger.info(f"Resubscribed to: {topic}")
                     async for message in subscription:
-                        asyncio.create_task(callback(topic=message.topic, payload=message.payload))
+                        task = asyncio.create_task(
+                            callback(topic=message.topic, payload=message.payload)
+                        )
+                        self._background_tasks.add(task)
+                        task.add_done_callback(self._background_tasks.discard)
 
             except asyncio.CancelledError:
                 pass

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import secrets
-from typing import Any, Generic, Protocol, TypeVar
+from typing import Any, Callable, Generic, Protocol, TypeVar
 
 from .base.types import BaseResponse
 
@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 ResponseWaiterType = TypeVar("ResponseWaiterType", bound=BaseResponse)
 
 
-async def _defult_request_id_generator() -> int:
+async def _default_request_id_generator() -> int:
     return secrets.randbits(16)
 
 
@@ -20,11 +20,20 @@ class RequestIdGenerator(Protocol):
 
 
 class ResponseWaiter(Generic[ResponseWaiterType]):
-    def __init__(self, device_id: str, request_id: int, ttl: int | None) -> None:
+    __slots__ = ("device_id", "request_id", "ttl", "_future", "_cancel_callback")
+
+    def __init__(
+        self,
+        device_id: str,
+        request_id: int,
+        ttl: int | None,
+        cancel_callback: Callable[[int], None] | None,
+    ) -> None:
         self.device_id = device_id
         self.request_id = request_id
         self.ttl = ttl
         self._future = asyncio.Future()
+        self._cancel_callback = cancel_callback
 
     def _set_result(self, result: dict[str, Any]) -> None:
         if not self._future.done():
@@ -39,6 +48,11 @@ class ResponseWaiter(Generic[ResponseWaiterType]):
             log.warning(f"Future for {self.request_id} already done or cancelled")
 
     async def wait(self, timeout: float | None = 60) -> ResponseWaiterType:
-        if timeout is None:
-            return await self._future
-        return await asyncio.wait_for(self._future, timeout)
+        try:
+            if timeout is None:
+                return await self._future
+            return await asyncio.wait_for(self._future, timeout)
+        except asyncio.TimeoutError:
+            if self._cancel_callback:
+                self._cancel_callback(self.request_id)
+            raise

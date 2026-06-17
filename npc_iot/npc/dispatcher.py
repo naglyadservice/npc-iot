@@ -17,3 +17,12 @@ class NpcDispatcher(BaseDispatcher):
     state_info = MessageHandler("/{device_id}/server/state/info")
     phone_add_multi_ack = MessageHandler("/{device_id}/phone/add_multi/ack", is_ack=True)
     phone_del_ack = MessageHandler("/{device_id}/phone/del/ack", is_ack=True)
+
+    # --- N-GATE v2.0: presence, DB sync, history, realtime events, rule config ---
+    status = MessageHandler("/{device_id}/server/status")
+    db_delta_ack = MessageHandler("/{device_id}/server/db/delta/ack", is_ack=True)
+    db_reset_ack = MessageHandler("/{device_id}/server/db/reset/ack", is_ack=True)
+    db_stats = MessageHandler("/{device_id}/server/db/stats")
+    history = MessageHandler("/{device_id}/server/history")
+    event = MessageHandler("/{device_id}/server/event")
+    rule_ack = MessageHandler("/{device_id}/server/rule/ack", is_ack=True)

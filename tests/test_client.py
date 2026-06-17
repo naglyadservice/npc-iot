@@ -126,3 +126,69 @@ async def test_npc_custom_prefix(mock_connector):
 
     sent = mock_connector.sent_messages[0]
     assert sent["topic"] == "custom/DEV1/client/reboot/set"
+
+
+# --- N-GATE v2.0: dual req_id/request_id correlation + protocol methods ---
+
+
+async def test_dual_correlation_keys_injected(base_client, mock_connector):
+    """The correlation id is injected under BOTH `req_id` and `request_id`, so db-sync
+    topics (which read `req_id`) and state topics (which read `request_id`) both correlate
+    from a single waiter."""
+    await base_client.send_message(
+        topic_template="/{device_id}/client/db/delta",
+        path_params={"device_id": "DEV1"},
+        qos=1,
+        payload={"ops": []},
+    )
+    decoded = json.loads(mock_connector.sent_messages[0]["payload"])
+    assert decoded["req_id"] == 1000
+    assert decoded["request_id"] == 1000
+    assert decoded["ops"] == []
+
+
+async def test_result_callback_resolves_on_req_id(base_client):
+    """A db-sync ack carries `req_id` (not `request_id`) — the waiter still resolves."""
+    waiter = await base_client.send_message(
+        topic_template="/{device_id}/client/db/delta",
+        path_params={"device_id": "DEV1"},
+        qos=1,
+        payload={"ops": []},
+    )
+    await base_client._result_callback({"req_id": waiter.request_id, "code": 0})
+    result = await waiter.wait(timeout=1)
+    assert result["code"] == 0
+
+
+@pytest.mark.parametrize(
+    "method,kwargs,expected_topic",
+    [
+        ("db_delta", {"payload": {"ops": []}}, "v2/DEV1/client/db/delta"),
+        ("rule_set", {"payload": {"rules": []}}, "v2/DEV1/client/rule/set"),
+    ],
+)
+async def test_v2_waiter_methods_produce_correct_topics(
+    npc_client, mock_connector, method, kwargs, expected_topic
+):
+    await getattr(npc_client, method)(device_id="DEV1", **kwargs)
+    assert mock_connector.sent_messages[0]["topic"] == expected_topic
+
+
+async def test_db_reset_topic(npc_client, mock_connector):
+    await npc_client.db_reset(device_id="DEV1")
+    assert mock_connector.sent_messages[0]["topic"] == "v2/DEV1/client/db/reset"
+
+
+async def test_fire_and_forget_methods_send_verbatim(npc_client, mock_connector):
+    """db_stats_get / history_ack publish without a waiter and without injecting a
+    correlation id — history_ack echoes the received batch's own `req_id` verbatim."""
+    await npc_client.db_stats_get(device_id="DEV1")
+    stats = mock_connector.sent_messages[0]
+    assert stats["topic"] == "v2/DEV1/client/db/stats/get"
+    assert "request_id" not in json.loads(stats["payload"])
+
+    await npc_client.history_ack(device_id="DEV1", payload={"req_id": 77, "acked": 5})
+    ack = mock_connector.sent_messages[1]
+    assert ack["topic"] == "v2/DEV1/client/history/ack"
+    assert json.loads(ack["payload"]) == {"req_id": 77, "acked": 5}
+    assert npc_client._response_waiters == {}  # neither call created a waiter

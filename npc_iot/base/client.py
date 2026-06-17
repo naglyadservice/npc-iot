@@ -126,7 +126,14 @@ class BaseClient(Generic[DispatcherType]):
         self._response_waiters[response_waiter.request_id] = response_waiter
 
         if isinstance(payload, Mapping):
-            payload = {"request_id": response_waiter.request_id, **payload}
+            # Inject the correlation id under BOTH keys: N-GATE v2.0 reads `req_id` for the
+            # db-sync/rule family and `request_id` for the state family, and tolerates the
+            # unused extra key. One id, both keys — so every topic correlates natively.
+            payload = {
+                "req_id": response_waiter.request_id,
+                "request_id": response_waiter.request_id,
+                **payload,
+            }
 
         formatted_topic = topic_template.format(**path_params)
         full_topic = f"{self._topic_prefix}{formatted_topic}"
@@ -154,8 +161,25 @@ class BaseClient(Generic[DispatcherType]):
             ttl=ttl,
         )
 
+    async def send_message_no_wait(
+        self,
+        topic_template: str,
+        path_params: dict[str, str],
+        qos: Literal[0, 1, 2],
+        payload: Mapping[str, Any] | str | bytes | None,
+        ttl: int | None = None,
+    ) -> None:
+        """Publish without creating a ResponseWaiter — for fire-and-forget messages
+        (notifications, or acks the device does not respond to). Unlike send_message it
+        injects NO correlation id, so the caller's payload is sent verbatim."""
+        formatted_topic = topic_template.format(**path_params)
+        full_topic = f"{self._topic_prefix}{formatted_topic}"
+        encoded = payload if isinstance(payload, (str, bytes)) else self._payload_encoder(payload)
+        await self.send_raw_message(topic=full_topic, qos=qos, payload=encoded, ttl=ttl)
+
     async def _result_callback(self, payload: dict[str, Any]) -> None:
-        request_id = payload.get("request_id")
+        # Accept either correlation key: db-sync/rule acks carry `req_id`, state acks `request_id`.
+        request_id = payload.get("req_id", payload.get("request_id"))
         if request_id is None:
             return
 

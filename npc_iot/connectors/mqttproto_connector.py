@@ -174,6 +174,12 @@ class MqttprotoConnector(BaseConnector):
             except asyncio.CancelledError:
                 pass
             except Exception as e:
+                # Benign teardown race: the probe re-subscribes as the client disconnects.
+                # The real-subscription reader suppresses the same error — mirror it here.
+                if isinstance(e, MQTTProtocolError) and str(e).startswith(
+                    "cannot perform this operation in the DISCONNECTED state"
+                ):
+                    return
                 logger.warning(f"Health probe subscription error: {e}")
 
         await self._subscription_tasks.enter_async_context(_BackgroundTaskContext(probe_reader))

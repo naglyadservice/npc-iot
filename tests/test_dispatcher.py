@@ -118,3 +118,31 @@ async def test_dispatcher_subscribes_all_handlers(mock_connector):
     assert "v2/+/server/state" in subscribed_topics
     assert "v2/+/server/state/info" in subscribed_topics
     assert "v2/+/phone/add_multi/ack" in subscribed_topics
+
+
+async def test_topic_with_regex_metacharacters(mock_connector):
+    """$SYS topics are not a special case for MQTT, but "$" is for a regex: unescaped,
+    it anchors to end-of-string and the handler never recognises its own messages."""
+    handler = MessageHandler("$SYS/brokers/{broker}/clients/{device_id}/connected")
+    received = {}
+
+    async def cb(device_id: str, broker: str, payload):
+        received["device_id"] = device_id
+        received["broker"] = broker
+
+    handler.register_callback(cb)
+
+    assert handler.mqtt_sub_topic == "$SYS/brokers/+/clients/+/connected"
+
+    async with handler.handle_messages(
+        connector=mock_connector,
+        topic_prefix="",
+        payload_decoder=json.loads,
+        ctx=None,
+    ):
+        await mock_connector.inject_message(
+            "$SYS/brokers/emqx@1/clients/DEV1/connected", b"{}"
+        )
+        await asyncio.sleep(0.05)
+
+    assert received == {"device_id": "DEV1", "broker": "emqx@1"}

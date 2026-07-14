@@ -217,3 +217,24 @@ async def test_fire_and_forget_methods_send_verbatim(npc_client, mock_connector)
     assert ack["topic"] == "v2/DEV1/client/history/ack"
     assert json.loads(ack["payload"]) == {"req_id": 77, "acked": 5}
     assert npc_client._response_waiters == {}  # neither call created a waiter
+
+
+async def test_correlation_keys_can_be_overridden_per_call(mock_connector):
+    """One fleet can speak two dialects: the rule/db-sync family correlates by
+    `req_id` while the same device's state family correlates by `request_id`."""
+    client = BaseClient(
+        connector=mock_connector,
+        topic_prefix="test",
+        request_id_generator=_fixed_request_id,
+        correlation_keys=("request_id",),
+    )
+
+    await client.send_message(
+        topic_template="/{device_id}/client/rule/get",
+        path_params={"device_id": "DEV1"},
+        qos=1,
+        payload={},
+        correlation_keys=("req_id",),
+    )
+
+    assert json.loads(mock_connector.sent_messages[0]["payload"]) == {"req_id": 1000}

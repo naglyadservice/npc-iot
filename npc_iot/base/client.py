@@ -121,6 +121,7 @@ class BaseClient(Generic[DispatcherType]):
         payload: Mapping[str, Any] | str | bytes | None,
         ttl: int | None = None,
         request_id: int | None = None,
+        correlation_keys: Sequence[str] | None = None,
     ) -> ResponseWaiter:
         if request_id is None:
             request_id = await self._request_id_generator()
@@ -134,8 +135,9 @@ class BaseClient(Generic[DispatcherType]):
         self._response_waiters[response_waiter.request_id] = response_waiter
 
         if isinstance(payload, Mapping):
+            keys = self._correlation_keys if correlation_keys is None else correlation_keys
             payload = {
-                **dict.fromkeys(self._correlation_keys, response_waiter.request_id),
+                **dict.fromkeys(keys, response_waiter.request_id),
                 **payload,
             }
 

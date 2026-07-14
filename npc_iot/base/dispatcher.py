@@ -118,9 +118,14 @@ class MessageHandler(Generic[ContextType]):
         ctx: ContextType,
         share_group_name: str | None = None,
     ) -> AsyncIterator[None]:
-        safe_prefix = re.escape(topic_prefix)
-        regex_pattern = re.sub(r"\{([^}]+)\}", r"(?P<\1>[^/]+)", self.topic_template)
-        topic_regex = re.compile(f"^{safe_prefix}{regex_pattern}$")
+        # Escape the template first: a topic may legitimately contain regex
+        # metacharacters ("$SYS/brokers/{broker}/clients/{device_id}/connected"),
+        # and an unescaped "$" right after "^" matches end-of-string — the handler
+        # would subscribe fine and then never recognise its own messages.
+        escaped_template = re.sub(
+            r"\\\{([^}]+)\\\}", r"(?P<\1>[^/]+)", re.escape(self.topic_template)
+        )
+        topic_regex = re.compile(f"^{re.escape(topic_prefix)}{escaped_template}$")
 
         async def _wrapped_handle_message(topic: str, payload: str | bytes):
             try:

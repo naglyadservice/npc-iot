@@ -1,6 +1,6 @@
 import logging
 from contextlib import AsyncExitStack
-from typing import Any, Callable, Generic, Literal, Mapping, Self, Type, TypeVar
+from typing import Any, Callable, Generic, Literal, Mapping, Self, Sequence, Type, TypeVar
 
 try:
     import orjson as json  # type: ignore
@@ -23,6 +23,12 @@ log = logging.getLogger(__name__)
 
 DispatcherType = TypeVar("DispatcherType", bound=BaseDispatcher)
 
+# N-GATE v2.0 reads `req_id` for the db-sync/rule family and `request_id` for the
+# state family, and tolerates the unused extra key — so both are sent by default and
+# every topic correlates natively. Fleets whose firmware rejects unknown payload keys
+# (or predates `req_id`) narrow this to the single key they speak.
+DEFAULT_CORRELATION_KEYS: tuple[str, ...] = ("req_id", "request_id")
+
 
 class BaseClient(Generic[DispatcherType]):
     dispatcher: DispatcherType
@@ -41,6 +47,7 @@ class BaseClient(Generic[DispatcherType]):
         payload_encoder: Callable[[Any], str | bytes] = json.dumps,
         payload_decoder: Callable[[str | bytes], Any] = json.loads,
         request_id_generator: RequestIdGenerator = _default_request_id_generator,
+        correlation_keys: Sequence[str] = DEFAULT_CORRELATION_KEYS,
         dispatcher_class: Type[DispatcherType] = BaseDispatcher,
         dispatcher_kwargs: dict[str, Any] | None = None,
     ) -> None:
@@ -78,6 +85,7 @@ class BaseClient(Generic[DispatcherType]):
         self._connector = connector
         self._topic_prefix = topic_prefix
         self._request_id_generator = request_id_generator
+        self._correlation_keys = tuple(correlation_keys)
         self._response_waiters: dict[int, ResponseWaiter] = {}
         self._payload_encoder = payload_encoder
         self._payload_decoder = payload_decoder
@@ -126,12 +134,8 @@ class BaseClient(Generic[DispatcherType]):
         self._response_waiters[response_waiter.request_id] = response_waiter
 
         if isinstance(payload, Mapping):
-            # Inject the correlation id under BOTH keys: N-GATE v2.0 reads `req_id` for the
-            # db-sync/rule family and `request_id` for the state family, and tolerates the
-            # unused extra key. One id, both keys — so every topic correlates natively.
             payload = {
-                "req_id": response_waiter.request_id,
-                "request_id": response_waiter.request_id,
+                **dict.fromkeys(self._correlation_keys, response_waiter.request_id),
                 **payload,
             }
 

@@ -160,6 +160,31 @@ async def test_result_callback_resolves_on_req_id(base_client):
     assert result["code"] == 0
 
 
+async def test_correlation_keys_can_be_narrowed(mock_connector):
+    """A fleet whose firmware predates `req_id` sends the single key it speaks —
+    an unknown key in a config/payment payload is not worth the risk."""
+    client = BaseClient(
+        connector=mock_connector,
+        topic_prefix="test",
+        request_id_generator=_fixed_request_id,
+        correlation_keys=("request_id",),
+    )
+
+    waiter = await client.send_message(
+        topic_template="/{device_id}/client/config/set",
+        path_params={"device_id": "DEV1"},
+        qos=1,
+        payload={"timeZone": 3},
+    )
+
+    decoded = json.loads(mock_connector.sent_messages[0]["payload"])
+    assert decoded == {"request_id": 1000, "timeZone": 3}
+
+    # Acks are still read permissively, whichever key the device answers with.
+    await client._result_callback({"req_id": waiter.request_id, "code": 0})
+    assert (await waiter.wait(timeout=1))["code"] == 0
+
+
 @pytest.mark.parametrize(
     "method,kwargs,expected_topic",
     [

@@ -86,7 +86,12 @@ class MqttprotoConnector(BaseConnector):
         logger.info("Connecting to MQTT broker...")
         while not self._stop_event.is_set():
             try:
-                await self._create_connection()
+                # Run the connection in its own task. mqttproto tears its session down
+                # through an anyio cancel scope, and awaiting _create_connection inline
+                # lets that cancellation land on this task instead: the sleep below is
+                # cancelled, the loop exits, and nothing ever reconnects again.
+                connection_task = asyncio.create_task(self._create_connection())
+                await connection_task
 
             except* (
                 OSError,

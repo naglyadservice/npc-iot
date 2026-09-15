@@ -168,3 +168,49 @@ async def test_health_check_triggers_reconnect(connector):
                     break
 
     assert connect_count >= 2
+
+
+async def test_reconnect_survives_cancellation_of_the_connection_task(connector):
+    """mqttproto ends its session through an anyio cancel scope, and such a scope keeps
+    re-delivering the cancellation to the task it wraps until that task leaves it. The
+    manager loop owns reconnection, so the connection must not run in the manager's own
+    task — otherwise the retry sleep is cancelled along with the session and the client
+    never comes back."""
+    connect_count = 0
+
+    class CancellingMockClient:
+        def __init__(self, **kwargs):
+            self.publish = AsyncMock()
+
+        async def __aenter__(self):
+            nonlocal connect_count
+            connect_count += 1
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        @asynccontextmanager
+        async def subscribe(self, topic, maximum_qos=None):
+            yield FakeSubscription()
+
+    async def kill_first_session():
+        if connect_count == 1:
+            task = asyncio.current_task()
+            loop = asyncio.get_running_loop()
+            # A cancel scope cancels its task again on every await it is still wrapping.
+            for delay in (0, 0.05, 0.1, 0.2, 0.4, 0.8, 1.2):
+                loop.call_later(delay, task.cancel)
+            await asyncio.sleep(0)
+        return True
+
+    with patch(
+        "npc_iot.connectors.mqttproto_connector.AsyncMQTTClient", CancellingMockClient
+    ), patch.object(connector, "_verify_subscriptions_work", side_effect=kill_first_session):
+        async with connector:
+            for _ in range(80):
+                await asyncio.sleep(0.05)
+                if connect_count >= 2:
+                    break
+
+    assert connect_count >= 2, "the connector stopped reconnecting after a cancelled session"

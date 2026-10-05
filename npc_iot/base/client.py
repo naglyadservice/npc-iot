@@ -43,6 +43,7 @@ class BaseClient(Generic[DispatcherType]):
         username: str | None = None,
         password: str | None = None,
         clean_start: bool | None = None,
+        keep_alive: int | None = None,
         topic_prefix: str = "",
         payload_encoder: Callable[[Any], str | bytes] = json.dumps,
         payload_decoder: Callable[[str | bytes], Any] = json.loads,
@@ -52,7 +53,8 @@ class BaseClient(Generic[DispatcherType]):
         dispatcher_kwargs: dict[str, Any] | None = None,
     ) -> None:
         if connector is not None and not all(
-            x is None for x in (host, port, ssl, client_id, username, password, clean_start)
+            x is None
+            for x in (host, port, ssl, client_id, username, password, clean_start, keep_alive)
         ):
             raise ValueError("connector and other connection parameters cannot be passed together")
 
@@ -72,6 +74,9 @@ class BaseClient(Generic[DispatcherType]):
             if clean_start is None:
                 clean_start = True
 
+            if keep_alive is None:
+                keep_alive = 0
+
             connector = MqttprotoConnector(
                 host=host,
                 port=port,
@@ -80,6 +85,7 @@ class BaseClient(Generic[DispatcherType]):
                 username=username,
                 password=password,
                 clean_start=clean_start,
+                keep_alive=keep_alive,
             )
 
         self._connector = connector

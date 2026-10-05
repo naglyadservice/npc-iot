@@ -25,6 +25,7 @@ class MqttprotoConnector(BaseConnector):
         websocket_path: str | None = None,
         subscription_maximum_qos: int = 2,
         clean_start: bool | None = None,
+        keep_alive: int = 0,
         health_check_min_interval: float = 1.0,
         health_check_max_interval: float = 30.0,
         health_check_backoff_factor: float = 1.5,
@@ -42,6 +43,9 @@ class MqttprotoConnector(BaseConnector):
             "transport": transport,
             "websocket_path": websocket_path,
             "clean_start": clean_start,
+            # Ненульовий keep_alive: mqttproto сам шле PINGREQ, а брокер прибирає
+            # сесію мертвого процесу за 1,5 x keep_alive. 0 — сесія вічна.
+            "keep_alive": keep_alive,
             "stamina_kwargs": {
                 "attempts": 1,
             },

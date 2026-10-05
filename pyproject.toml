@@ -12,7 +12,7 @@ dependencies = [
 test = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 
 [tool.uv.sources]
-mqttproto = { git = "https://github.com/naglyadservice/mqttproto" }
+mqttproto = { git = "https://github.com/naglyadservice/mqttproto", rev = "9f802fa94426b78eed3018620b2fbf0f0942c5d2" }
 
 
 [tool.pytest.ini_options]
